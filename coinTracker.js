@@ -58,7 +58,8 @@ const coinTracker = {
 
         isTracking[coinId][userId] = {
             tracking: true,
-            amount: amount
+            amount: amount,
+            since: Date.now()
         };
     },
     stop: (coinId, userId) => {
@@ -122,6 +123,64 @@ const coinTracker = {
 
         return await userSpecificNDAXInstance.fetchOrder(orderId);
     },
+    fetchMyTrades: async (userId, coinId, hours = 2, sinceTrackingStart = false) => {
+        const userSpecificNDAXInstance = ndaxInstanceUserMap[userId];
+
+        if (!userSpecificNDAXInstance) {
+            throw new Error(`User with id ${userId} is not logged in`);
+        }
+
+        try {
+            const since = sinceTrackingStart ? isTracking[coinId][userId].since : Date.now() - 1000 * 60 * 60 * hours;
+
+            const trades = await userSpecificNDAXInstance.fetchMyTrades(getCoinMarketId(coinId), since);
+
+            let sellsAccumulated = {
+                [coinId]: 0,
+                cad: 0
+            };
+
+            let buysAccumulated = {
+                [coinId]: 0,
+                cad: 0
+            };
+
+            let fees = 0;
+
+            trades.forEach(trade => {
+                if (trade.side === 'buy') {
+                    buysAccumulated.cad += trade.cost;
+                    buysAccumulated[coinId] += trade.amount;
+                } else {
+                    sellsAccumulated.cad += trade.cost;
+                    sellsAccumulated[coinId] += trade.amount;
+                }
+
+                fees += trade.fee.cost;
+            });
+
+            return  {
+                buys: {
+                    [coinId]: buysAccumulated[coinId],
+                    cad: buysAccumulated.cad,
+                    avgPrice: buysAccumulated.cad / buysAccumulated[coinId]
+                },
+                sells: {
+                    [coinId]: sellsAccumulated[coinId],
+                    cad: sellsAccumulated.cad,
+                    avgPrice: sellsAccumulated.cad / sellsAccumulated[coinId]
+                },
+                fees: `${fees} ${coinId}`,
+                profit: {
+                    [coinId]: sellsAccumulated[coinId] - buysAccumulated[coinId] - fees,
+                    cad: sellsAccumulated.cad - buysAccumulated.cad
+                }
+            };
+
+        } catch (e) {
+            console.log(e.message);
+        }
+    },
     getCoinMetadata: async (coinId) => {
         let metaId;
 
@@ -178,9 +237,9 @@ const getLast10RelevantTrades = async (coinId) => {
 };
 
 const getLast10RevelantTradesAveragePrice = async (coindId) => {
-   const resp = await getLast10RelevantTrades(coindId);
+    const resp = await getLast10RelevantTrades(coindId);
 
-   return resp.map(trade => trade.price).reduce((sum, val) => sum + val, 0) / resp.length;
+    return resp.map(trade => trade.price).reduce((sum, val) => sum + val, 0) / resp.length;
 };
 
 const checkOpenOrders = async () => {
@@ -192,7 +251,7 @@ const checkOpenOrders = async () => {
         for (let i = 0; i < openOrders.length; i++) {
             order = openOrders[i];
 
-            const {userId, coinId, price, orderId} = order;
+            const {userId, coinId, price, orderId, amount} = order;
 
             try {
                 fetchedOrder = await coinTracker.fetchOrder(userId, orderId);
@@ -220,13 +279,13 @@ const checkOpenOrders = async () => {
                         const sellPrice = Math.max(price * 1.005, currentTicker.ask - 0.001);
 
                         // Add sell order 0.5% above the price where we bought it
-                        const sellOrder = await coinTracker.createOrder(userId, coinId, sellPrice, fetchedOrder.amount, 'sell', 'limit');
+                        const sellOrder = await coinTracker.createOrder(userId, coinId, sellPrice, amount, 'sell', 'limit');
 
                         // Remove old entry with new one
                         openOrders[i] = {
                             userId: userId,
                             coinId: coinId,
-                            amount: fetchedOrder.amount,
+                            amount: amount,
                             orderId: sellOrder.id,
                             price: sellPrice,
                             type: 'sell'
@@ -255,7 +314,7 @@ const checkOpenOrders = async () => {
 
                             const sellPrice = Math.max(last10TradesAveragePrice, currentTicker.ask - 0.001);
 
-                            const newOrder = await coinTracker.editOrder(userId, coinId, orderId, sellPrice, fetchedOrder.remaining, 'sell', 'limit');
+                            const newOrder = await coinTracker.editOrder(userId, coinId, orderId, sellPrice, Math.max(fetchedOrder.remaining, 10), 'sell', 'limit');
 
                             // Update order object to new id:
                             order.orderId = newOrder.id;
@@ -275,9 +334,9 @@ const checkOpenOrders = async () => {
 
                             const currentTicker = await coinTracker.fetchTicker(coinId);
 
-                            const buyPrice = Math.min(currentTicker.bid + 0.0001,last10TradesAveragePrice * 0.995);
+                            const buyPrice = Math.min(currentTicker.bid + 0.0001, last10TradesAveragePrice * 0.995);
 
-                            const newOrder = await coinTracker.editOrder(userId, coinId, orderId, buyPrice, fetchedOrder.remaining, 'buy', 'limit');
+                            const newOrder = await coinTracker.editOrder(userId, coinId, orderId, buyPrice, Math.max(fetchedOrder.remaining, 10), 'buy', 'limit');
 
                             order.orderId = newOrder.id;
                             order.price = buyPrice;
@@ -389,7 +448,7 @@ const checkMarketForNewDips = async (coinIds) => {
 
                         try {
                             // Use either the current lower ask or the rolling average - 0.5%
-                            const buyPrice = Math.min(currentTicker.bid + 0.001,last10TradesAveragePrice * 0.995);
+                            const buyPrice = Math.min(currentTicker.bid + 0.001, last10TradesAveragePrice * 0.995);
 
                             const order = await coinTracker.createOrder(userId, coinId, buyPrice, meta.amount, 'buy', 'limit');
 

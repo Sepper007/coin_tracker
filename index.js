@@ -129,6 +129,42 @@ app.get('/order/:userId/id/:orderId', async(req, res) => {
     }
 });
 
+app.get('/trades/user/:userId/coin/:coinId', async(req, res) => {
+    try {
+        const { userId, coinId } = req.params;
+
+        const resp = await coinTracker.fetchMyTrades(userId, coinId);
+
+        res.send(resp);
+    } catch (e) {
+        res.send(e.message, 500);
+    }
+});
+
+app.get('/trades/user/:userId/coin/:coinId/hours/:hours', async(req, res) => {
+    try {
+        const { userId, coinId, hours } = req.params;
+
+        const resp = await coinTracker.fetchMyTrades(userId, coinId, hours);
+
+        res.send(resp);
+    } catch (e) {
+        res.send(e.message, 500);
+    }
+});
+
+app.get('/trades/user/:userId/coin/:coinId/since-tracking-start', async(req, res) => {
+    try {
+        const { userId, coinId } = req.params;
+
+        const resp = await coinTracker.fetchMyTrades(userId, coinId, null, true);
+
+        res.send(resp);
+    } catch (e) {
+        res.send(e.message, 500);
+    }
+});
+
 
 
 app.listen(port, () => {
