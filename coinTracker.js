@@ -180,7 +180,7 @@ const checkOpenOrders = async () => {
         for (let i = 0; i < openOrders.length; i++) {
             order = openOrders[i];
 
-            const {userId, coinId, amount, price, orderId} = order;
+            const {userId, coinId, price, orderId} = order;
 
             try {
                 fetchedOrder = await coinTracker.fetchOrder(userId, orderId);
@@ -208,13 +208,13 @@ const checkOpenOrders = async () => {
                         const sellPrice = Math.max(price * 1.005, currentTicker.ask - 0.001);
 
                         // Add sell order 0.5% above the price where we bought it
-                        const sellOrder = await coinTracker.createOrder(userId, coinId, sellPrice, amount, 'sell', 'limit');
+                        const sellOrder = await coinTracker.createOrder(userId, coinId, sellPrice, fetchedOrder.amount, 'sell', 'limit');
 
                         // Remove old entry with new one
                         openOrders[i] = {
                             userId: userId,
                             coinId: coinId,
-                            amount: amount,
+                            amount: fetchedOrder.amount,
                             orderId: sellOrder.id,
                             price: sellPrice,
                             type: 'sell'
@@ -243,7 +243,7 @@ const checkOpenOrders = async () => {
 
                             const sellPrice = Math.max(last10TradesAveragePrice, currentTicker.ask - 0.001);
 
-                            const newOrder = await coinTracker.editOrder(userId, coinId, orderId, sellPrice, amount, 'sell', 'limit');
+                            const newOrder = await coinTracker.editOrder(userId, coinId, orderId, sellPrice, fetchedOrder.amount, 'sell', 'limit');
 
                             // Update order object to new id:
                             order.orderId = newOrder.id;
@@ -265,7 +265,7 @@ const checkOpenOrders = async () => {
 
                             const buyPrice = Math.min(currentTicker.bid + 0.001,last10TradesAveragePrice * 0.995);
 
-                            const newOrder = await coinTracker.editOrder(userId, coinId, orderId, buyPrice, amount, 'buy', 'limit');
+                            const newOrder = await coinTracker.editOrder(userId, coinId, orderId, buyPrice, fetchedOrder.amount, 'buy', 'limit');
 
                             order.orderId = newOrder.id;
                             order.price = buyPrice;
