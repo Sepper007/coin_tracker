@@ -46,6 +46,14 @@ app.get('/meta/:coinId', async (req, res) => {
 
 });
 
+app.get('/meta', async (req, res) => {
+    try {
+        res.send(await coinTracker.getCoinMetadata());
+    } catch (e) {
+        res.send(e.message, 500);
+    }
+});
+
 
 app.get('/currentTicker/:coinId', async (req, res) => {
     const { coinId } = req.params;

@@ -11,7 +11,7 @@
     "nodemon": "^2.0.7"
   },
   "scripts": {
-    "start": "nodemon",
+    "start": "nodemon --inspect index.js",
     "debug": "nodemon --inspect index.js"
   }
 }

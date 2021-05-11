@@ -19,6 +19,10 @@ const supportedCoins = {
     doge: {
         marketId: 'DOGE/CAD',
         metaId: 'DOGE'
+    },
+    xrp: {
+        marketId: 'XRP/CAD',
+        metaId: 'XRP'
     }
 };
 
@@ -119,11 +123,19 @@ const coinTracker = {
         return await userSpecificNDAXInstance.fetchOrder(orderId);
     },
     getCoinMetadata: async (coinId) => {
-        const metaId = getCoinMetaId(coinId);
+        let metaId;
+
+        if (coinId) {
+            metaId = getCoinMetaId(coinId);
+        }
 
         const resp = await readOnlyNDAXInstance.fetchCurrencies();
 
-        return resp[metaId];
+        if (metaId) {
+            return resp[metaId];
+        }
+
+        return resp;
     },
     fetchTicker: async (coinId) => {
         const marketId = getCoinMarketId(coinId);
@@ -235,7 +247,7 @@ const checkOpenOrders = async () => {
                         // if so cut your losses, and change the sell price
 
                         try {
-                            console.log('Unprocessed sell order is blocking the execution, adjust sell price to unblock bot');
+                            console.log(`Unprocessed sell order for user ${userId} and coin ${coinId} is blocking the execution, adjust sell price to unblock bot`);
 
                             const last10TradesAveragePrice = await getLast10RevelantTradesAveragePrice(coinId);
 
@@ -257,7 +269,7 @@ const checkOpenOrders = async () => {
                     if (Date.now() - fetchedOrder.timestamp >= 1000 * 60) {
                         // if so change the buy price to unlock the bot
                         try {
-                            console.log('Unprocessed buy order is blocking the execution, adjust buy price to unblock bot');
+                            console.log(`Unprocessed buy order for user ${userId} and coin ${coinId} is blocking the execution, adjust buy price to unblock bot`);
 
                             const last10TradesAveragePrice = await getLast10RevelantTradesAveragePrice(coinId);
 
@@ -347,7 +359,7 @@ const checkMarketForNewDips = async (coinIds) => {
 
             // Check that averages are going down, allow 1 exception and make sure it overall went down more than 0.5%
             for (let i = 1; i < averages.length; i++) {
-                if (averages[i] >= averages[i - 1]) {
+                if (averages[i] <= averages[i - 1]) {
                     numberOfNegativeTrends++;
                 }
             }
@@ -390,7 +402,7 @@ const checkMarketForNewDips = async (coinIds) => {
                                 type: 'buy'
                             });
                         } catch (e) {
-                            console.log(`Creating buy order for user ${userId} and coinId ${coinId} failed, skipping logic for now`);
+                            console.log(`Creating buy order for user ${userId} and coinId ${coinId} failed with the following error msg: ${e.message}, skipping logic for now`);
                         }
                     }
                 }
