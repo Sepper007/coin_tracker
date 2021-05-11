@@ -197,7 +197,7 @@ const checkOpenOrders = async () => {
             try {
                 fetchedOrder = await coinTracker.fetchOrder(userId, orderId);
             } catch (e) {
-                console.log(`fetching order ${orderId} failed, skipping sell logic for now`);
+                console.log(`fetching order ${orderId} failed with the following error ${e.message}, skipping sell logic for now`);
                 continue;
             }
 
