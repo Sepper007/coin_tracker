@@ -1,0 +1,36 @@
+<html>
+    <head>
+        <Title>Crypto Coin Tracker</Title>
+
+        <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+        <script src="./index.js"></script>
+    </head>
+
+    <body>
+        <div>
+            <label for="api-key">API-Key</label>
+            <input type="text" id="api-key">
+            <label for="secret">Secret</label>
+            <input type="text" id="secret">
+            <label for="user-id">User Id</label>
+            <input type="text" id="user-id">
+            <button onclick="onLoginButtonClicked()">Login</button>
+
+            <div id="loginStatusDiv">
+
+            </div>
+
+        </div>
+
+        <div>
+            <button onclick="cancelAllOrders()">Cancel all orders</button>
+            <div id="cancelOrdersStatusDiv"/>
+        </div>
+
+        <div>
+            <button onclick="createOrder()">Create order</button>
+            <div id="createOrderStatusDiv"/>
+        </div>
+
+    </body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "name": "doge-tracker",
+  "version": "1.0.0",
+  "description": "Doge Coin Tracker",
+  "main": "index.js",
+  "author": "Sebastian Oberhauser",
+  "license": "MIT",
+  "dependencies": {
+    "ccxt": "^1.49.47",
+    "express": "^4.17.1",
+    "nodemon": "^2.0.7"
+  },
+  "scripts": {
+    "start": "nodemon",
+    "debug": "nodemon --inspect index.js"
+  }
+}
