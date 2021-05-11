@@ -5,7 +5,7 @@ const readOnlyNDAXInstance = new ccxt.ndax();
 
 const ndaxInstanceUserMap = {};
 
-const openOrders = [];
+let openOrders = [];
 
 const logIntoNDAXAccount = (apiKey, apiSecret, userId) => {
     ndaxInstanceUserMap[userId] = new ccxt.ndax({
@@ -59,6 +59,9 @@ const coinTracker = {
     },
     stop: (coinId, userId) => {
         console.log(`Stop tracking coin ${coinId} for user ${userId}`);
+
+        // Remove any open orders for the given user and coin id
+        openOrders = openOrders.filter(order => !(order.userId === userId && order.coinId === coinId));
 
         isTracking[coinId][userId] = {
             tracking: false
