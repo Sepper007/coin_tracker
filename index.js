@@ -73,7 +73,7 @@ app.get('/trades/:coinId', async(req, res) => {
     }
 });
 
-app.post('/login', async(req, res) => {
+app.post('/add-user-info', async(req, res) => {
     try {
         await coinTracker.login(req.body);
 
