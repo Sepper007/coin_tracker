@@ -159,14 +159,22 @@ const coinTracker = {
                 fees += trade.fee.cost;
             });
 
-            const higherDogeAmount = Math.max(buysAccumulated[coinId], sellsAccumulated[coinId]);
+            const higherCoinAmount = Math.max(buysAccumulated[coinId], sellsAccumulated[coinId]);
 
             const buysAvg = buysAccumulated.cad / buysAccumulated[coinId];
 
-            const sellsAvg =  sellsAccumulated.cad / sellsAccumulated[coinId];
+            const sellsAvg = sellsAccumulated.cad / sellsAccumulated[coinId];
 
-            return  {
-                minutesUp: sinceTrackingStart ? (Date.now() - isTracking[coinId][userId].since) / (1000 * 60): null,
+            const weightedAvg = {
+                coin: -fees - Math.abs(sellsAccumulated[coinId] - buysAccumulated[coinId]) * (fees / (sellsAccumulated[coinId] + buysAccumulated[coinId])),
+                cad: higherCoinAmount * (sellsAvg - buysAvg)
+            };
+
+            const currentTicker = await coinTracker.fetchTicker(coinId);
+
+            return {
+                minutesUp: sinceTrackingStart ? (Date.now() - isTracking[coinId][userId].since) / (1000 * 60) : null,
+                currentPrice: currentTicker.last,
                 buys: {
                     [coinId]: buysAccumulated[coinId],
                     cad: buysAccumulated.cad,
@@ -182,8 +190,9 @@ const coinTracker = {
                     [coinId]: sellsAccumulated[coinId] - buysAccumulated[coinId] - fees,
                     cad: sellsAccumulated.cad - buysAccumulated.cad,
                     weightedAverage: {
-                        [coinId]: (sellsAccumulated[coinId] - buysAccumulated[coinId]) * 0.02 - fees,
-                        cad: higherDogeAmount * (sellsAvg - buysAvg)
+                        [coinId]: weightedAvg.coin,
+                        cad: weightedAvg.cad,
+                        netProfit:  `${weightedAvg.cad + currentTicker.last * weightedAvg.coin} CAD`
                     }
                 }
             };
@@ -445,8 +454,8 @@ const checkMarketForNewDips = async (coinIds) => {
 
             if (numberOfPositiveTrends >= 7) {
                 console.log('Overall trend is very negative, skip buying order until market has stabilised');
-            } else
-            //if (averages[0] / last10TradesAveragePrice >= 1.01) {
+            } else {
+                //if (averages[0] / last10TradesAveragePrice >= 1.01) {
                 for (const [userId, meta] of Object.entries(isTracking[coinId])) {
                     if (openOrders.some(order => order.userId === userId && order.coinId === coinId)) {
                         continue;
@@ -476,6 +485,7 @@ const checkMarketForNewDips = async (coinIds) => {
                         }
                     }
                 }
+            }
         }
     }
 };
