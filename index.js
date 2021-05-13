@@ -1,4 +1,6 @@
 const express = require('express');
+const {Pool} = require('pg');
+
 const app = express();
 
 const port = process.env.PORT || 3000;
@@ -10,7 +12,7 @@ app.use(express.static('public'));
 const coinTracker = require('./coinTracker');
 
 app.post('/startTracking/coin/:coinId/user/:userId/amount/:amount', (req, res) => {
-    const { coinId, userId, amount } = req.params;
+    const {coinId, userId, amount} = req.params;
 
     coinTracker.start(coinId, userId, amount);
 
@@ -18,7 +20,7 @@ app.post('/startTracking/coin/:coinId/user/:userId/amount/:amount', (req, res) =
 });
 
 app.post('/stopTracking/coin/:coinId/user/:userId', (req, res) => {
-    const { coinId, userId } = req.params;
+    const {coinId, userId} = req.params;
 
     coinTracker.stop(coinId, userId);
 
@@ -26,7 +28,7 @@ app.post('/stopTracking/coin/:coinId/user/:userId', (req, res) => {
 });
 
 app.get('/trackingStatus/:userId/id/:coinId', (req, res) => {
-    const { userId, coinId } = req.params;
+    const {userId, coinId} = req.params;
 
     res.send(coinTracker.status(userId, coinId));
 });
@@ -36,7 +38,7 @@ app.get('/trackingStatus', (req, res) => {
 });
 
 app.get('/meta/:coinId', async (req, res) => {
-    const { coinId } = req.params;
+    const {coinId} = req.params;
 
     try {
         res.send(await coinTracker.getCoinMetadata(coinId));
@@ -56,13 +58,13 @@ app.get('/meta', async (req, res) => {
 
 
 app.get('/currentTicker/:coinId', async (req, res) => {
-    const { coinId } = req.params;
+    const {coinId} = req.params;
 
     res.send(await coinTracker.fetchTicker(coinId));
 });
 
-app.get('/history/:coinId', async(req, res) => {
-    const { coinId } = req.params;
+app.get('/history/:coinId', async (req, res) => {
+    const {coinId} = req.params;
 
     try {
         res.send(await coinTracker.getTickerHistory(coinId));
@@ -71,8 +73,8 @@ app.get('/history/:coinId', async(req, res) => {
     }
 });
 
-app.get('/trades/:coinId', async(req, res) => {
-    const { coinId } = req.params;
+app.get('/trades/:coinId', async (req, res) => {
+    const {coinId} = req.params;
 
     try {
         res.send(await coinTracker.getRecentTrades(coinId));
@@ -81,7 +83,7 @@ app.get('/trades/:coinId', async(req, res) => {
     }
 });
 
-app.post('/add-user-info', async(req, res) => {
+app.post('/add-user-info', async (req, res) => {
     try {
         await coinTracker.login(req.body);
 
@@ -91,23 +93,23 @@ app.post('/add-user-info', async(req, res) => {
     }
 });
 
-app.post('/cancelAllOrders/:userId', async(req, res) => {
-   try {
-       const { userId } = req.params;
+app.post('/cancelAllOrders/:userId', async (req, res) => {
+    try {
+        const {userId} = req.params;
 
-       await coinTracker.cancelAllOrders(userId);
+        await coinTracker.cancelAllOrders(userId);
 
-       res.send({}, 204);
-   } catch (e) {
-       res.send(e.message, 500);
-   }
+        res.send({}, 204);
+    } catch (e) {
+        res.send(e.message, 500);
+    }
 });
 
-app.post('/order/:userId', async(req, res) => {
+app.post('/order/:userId', async (req, res) => {
     try {
-        const { userId } = req.params;
+        const {userId} = req.params;
 
-        const { coinId, price, amount, action ='sell', type = 'limit' } = req.body;
+        const {coinId, price, amount, action = 'sell', type = 'limit'} = req.body;
 
         const resp = await coinTracker.createOrder(userId, coinId, price, amount, action, type);
 
@@ -117,9 +119,9 @@ app.post('/order/:userId', async(req, res) => {
     }
 });
 
-app.get('/order/:userId/id/:orderId', async(req, res) => {
+app.get('/order/:userId/id/:orderId', async (req, res) => {
     try {
-        const { userId, orderId } = req.params;
+        const {userId, orderId} = req.params;
 
         const resp = await coinTracker.fetchOrder(userId, orderId);
 
@@ -129,9 +131,9 @@ app.get('/order/:userId/id/:orderId', async(req, res) => {
     }
 });
 
-app.get('/trades/user/:userId/coin/:coinId', async(req, res) => {
+app.get('/trades/user/:userId/coin/:coinId', async (req, res) => {
     try {
-        const { userId, coinId } = req.params;
+        const {userId, coinId} = req.params;
 
         const resp = await coinTracker.fetchMyTrades(userId, coinId);
 
@@ -141,9 +143,9 @@ app.get('/trades/user/:userId/coin/:coinId', async(req, res) => {
     }
 });
 
-app.get('/trades/user/:userId/coin/:coinId/hours/:hours', async(req, res) => {
+app.get('/trades/user/:userId/coin/:coinId/hours/:hours', async (req, res) => {
     try {
-        const { userId, coinId, hours } = req.params;
+        const {userId, coinId, hours} = req.params;
 
         const resp = await coinTracker.fetchMyTrades(userId, coinId, hours);
 
@@ -153,9 +155,9 @@ app.get('/trades/user/:userId/coin/:coinId/hours/:hours', async(req, res) => {
     }
 });
 
-app.get('/trades/user/:userId/coin/:coinId/since-tracking-start', async(req, res) => {
+app.get('/trades/user/:userId/coin/:coinId/since-tracking-start', async (req, res) => {
     try {
-        const { userId, coinId } = req.params;
+        const {userId, coinId} = req.params;
 
         const resp = await coinTracker.fetchMyTrades(userId, coinId, null, true);
 
@@ -165,6 +167,25 @@ app.get('/trades/user/:userId/coin/:coinId/since-tracking-start', async(req, res
     }
 });
 
+app.get('/test/db', async (req, res) => {
+    try {
+        const {Pool} = require('pg');
+        const pool = new Pool({
+            connectionString: process.env.DATABASE_URL,
+            ssl: {
+                rejectUnauthorized: false
+            }
+        });
+        const client = await pool.connect();
+        const result = await client.query('SELECT * FROM test_table');
+        const results = {'results': (result) ? result.rows : null};
+        res.render('pages/db', results);
+        client.release();
+    } catch (err) {
+        console.error(err);
+        res.send("Error " + err);
+    }
+});
 
 
 app.listen(port, () => {
