@@ -1,6 +1,8 @@
 const express = require('express');
 const {Pool} = require('pg');
 
+const userAuthenticationApi = require('./api/userAuthenticationApi');
+
 const app = express();
 
 const port = process.env.PORT || 3000;
@@ -8,6 +10,8 @@ const port = process.env.PORT || 3000;
 app.use(express.json());
 
 app.use(express.static('public'));
+
+userAuthenticationApi(app);
 
 const coinTracker = require('./coinTracker');
 
