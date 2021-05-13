@@ -192,7 +192,7 @@ const coinTracker = {
                     weightedAverage: {
                         [coinId]: weightedAvg.coin,
                         cad: weightedAvg.cad,
-                        netProfit:  `${weightedAvg.cad + currentTicker.last * weightedAvg.coin} CAD`
+                        netProfit: `${weightedAvg.cad + currentTicker.last * weightedAvg.coin} CAD`
                     }
                 }
             };
@@ -377,8 +377,6 @@ const checkOpenOrders = async () => {
 
 const checkMarketForNewDips = async (coinIds) => {
     while (true) {
-        await timeout(10 * 1000);
-
         const trackedCoins = coinIds.filter(
             coinId => Object.values(isTracking[coinId]).some(obj => obj.tracking));
 
@@ -400,10 +398,10 @@ const checkMarketForNewDips = async (coinIds) => {
 
             // Filter out any trades with less than 100 coins, as they are minor
 
-            const relevantTrades = trades.filter(trade => trade.amount >= 100);
+            const relevantTrades = trades.filter(trade => trade.amount >= 40);
 
             // Splice changes the array, so the "leftover" entries are any trades apart from the last 10
-            const last10Trades = relevantTrades.splice(relevantTrades.length - 10, relevantTrades.length);
+            const last10Trades = relevantTrades.slice(relevantTrades.length - 10, relevantTrades.length);
 
             if (last10Trades.length !== 10) {
                 continue;
@@ -414,6 +412,65 @@ const checkMarketForNewDips = async (coinIds) => {
             const averages = [];
 
             let subGroup, groupAverage, numberOfPositiveTrends = 0;
+
+            const currentTimeInMs = Date.now();
+
+            const offsetInMins = 5;
+
+            const offsetInMs = 1000 * 60 * offsetInMins;
+
+            const tradesMadeWithinTheLast5Mins = relevantTrades.filter(trade => trade.timestamp >= currentTimeInMs - offsetInMs);
+
+            const groupTradesByMins = [];
+
+            for (let i = 0; i < offsetInMins; i++) {
+                groupTradesByMins[i] = [];
+            }
+
+            let relevantGroupIndex;
+
+            // Create a group of trades for every minute (< 1-minute ago, > 1-minute and <= 2-minutes ago etc.)
+            tradesMadeWithinTheLast5Mins.forEach(trade => {
+                relevantGroupIndex = Math.floor((currentTimeInMs - trade.timestamp) / (1000 * 60));
+
+                groupTradesByMins[relevantGroupIndex].push(trade.price);
+            });
+
+            // If there's a gap of data remove that group from the array
+            const groupAverages = groupTradesByMins.filter(arr => arr.length)
+                .map(arr => {
+                    const aggregatedPrices = arr.reduce((avg, val) => avg + val, 0);
+
+                    return aggregatedPrices / arr.length;
+                });
+
+
+            // Only allow 2 gaps max, otherwise the present data isn't significant enough
+            if (groupAverages.length < offsetInMins - 1) {
+                console.log('Very little trading activity going on at the moment, skipping buying order until there is more activity');
+                continue;
+            }
+
+            // If general trend is negative skip buying until market has stabilised
+            const filteredGroupsLength = groupAverages.length;
+
+            // If recent trend is positive skip further evaluations and proceed to buying logic
+            if (groupAverages[filteredGroupsLength - 1] < groupAverages[filteredGroupsLength - 2]) {
+                let generalTrendNegative = true;
+
+                for (let i = 0; i < filteredGroupsLength - 2; i++) {
+                    // Found a positive trend for at least one sequence, skip logic and proceed to buying logic
+                    if (groupAverages[i] < groupAverages[i + 1]) {
+                        generalTrendNegative = false;
+                        break;
+                    }
+                }
+
+                if (generalTrendNegative) {
+                    console.log('The general market trend is negative at the moment, delay creation of new buying orders until market has stabilised');
+                    continue;
+                }
+            }
 
             for (let i = 0; i < relevantTrades.length; i += 10) {
                 // Put trades into chunk of 10 and build an average
@@ -434,59 +491,40 @@ const checkMarketForNewDips = async (coinIds) => {
             }
              */
 
-            let numberOfNegativeTrends = 0;
-
-            // Check that averages are going down, allow 1 exception and make sure it overall went down more than 0.5%
-            for (let i = 1; i < averages.length; i++) {
-                if (averages[i] <= averages[i - 1]) {
-                    numberOfNegativeTrends++;
+            //if (averages[0] / last10TradesAveragePrice >= 1.01) {
+            for (const [userId, meta] of Object.entries(isTracking[coinId])) {
+                if (openOrders.some(order => order.userId === userId && order.coinId === coinId)) {
+                    continue;
                 }
-            }
 
+                const currentTicker = await coinTracker.fetchTicker(coinId);
 
-            if (numberOfNegativeTrends >= 7) {
-                console.log('Overall trend is very negative, skip buying order until market has stabilised');
+                if (meta.tracking) {
+                    console.log(`Making buy order for user ${userId} and coin ${coinId}`);
 
-                continue;
-            }
+                    try {
+                        // Use either the current lower ask or the rolling average - 0.5%
+                        const buyPrice = Math.min(currentTicker.bid + 0.001, last10TradesAveragePrice * 0.994);
 
-            // It dropped by at least 1%
+                        const order = await coinTracker.createOrder(userId, coinId, buyPrice, meta.amount, 'buy', 'limit');
 
-            if (numberOfPositiveTrends >= 7) {
-                console.log('Overall trend is very negative, skip buying order until market has stabilised');
-            } else {
-                //if (averages[0] / last10TradesAveragePrice >= 1.01) {
-                for (const [userId, meta] of Object.entries(isTracking[coinId])) {
-                    if (openOrders.some(order => order.userId === userId && order.coinId === coinId)) {
-                        continue;
-                    }
-
-                    const currentTicker = await coinTracker.fetchTicker(coinId);
-
-                    if (meta.tracking) {
-                        console.log(`Making buy order for user ${userId} and coin ${coinId}`);
-
-                        try {
-                            // Use either the current lower ask or the rolling average - 0.5%
-                            const buyPrice = Math.min(currentTicker.bid + 0.001, last10TradesAveragePrice * 0.994);
-
-                            const order = await coinTracker.createOrder(userId, coinId, buyPrice, meta.amount, 'buy', 'limit');
-
-                            openOrders.push({
-                                userId: userId,
-                                coinId: coinId,
-                                amount: meta.amount,
-                                orderId: order.id,
-                                price: buyPrice,
-                                type: 'buy'
-                            });
-                        } catch (e) {
-                            console.log(`Creating buy order for user ${userId} and coinId ${coinId} failed with the following error msg: ${e.message}, skipping logic for now`);
-                        }
+                        openOrders.push({
+                            userId: userId,
+                            coinId: coinId,
+                            amount: meta.amount,
+                            orderId: order.id,
+                            price: buyPrice,
+                            type: 'buy'
+                        });
+                    } catch (e) {
+                        console.log(`Creating buy order for user ${userId} and coinId ${coinId} failed with the following error msg: ${e.message}, skipping logic for now`);
                     }
                 }
+
             }
         }
+
+        await timeout(10 * 1000);
     }
 };
 
