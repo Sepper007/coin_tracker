@@ -11,14 +11,29 @@ app.use(express.json());
 
 app.use(express.static('public'));
 
-userAuthenticationApi(app);
+// userAuthenticationApi(app);
 
+// Load different platforms
+const NDaxTradingPlatform = require('./platforms/NDAXTradingPlatform');
+
+const tradingPlatforms = {
+    ndax: new NDaxTradingPlatform()
+};
+
+
+// Load different modules
 const coinTracker = require('./coinTracker');
 
-app.post('/startTracking/coin/:coinId/user/:userId/amount/:amount', (req, res) => {
+const tradingAnalytics = require('./modules/tradingAnalytics');
+
+const TradingBotsTracker = require('./modules/bots/TradingBotsTracker');
+
+const tradingBotsTracker = new TradingBotsTracker();
+
+app.post('/startMarketSpreadBot/coin/:coinId/user/:userId/amount/:amount', (req, res) => {
     const {coinId, userId, amount} = req.params;
 
-    coinTracker.start(coinId, userId, amount);
+    tradingBotsTracker.startBotForUser(userId, TradingBotsTracker.botTypes.marketSpread, 'ndax', coinId, amount, tradingPlatforms.ndax);
 
     res.send('{}', 204);
 });
@@ -45,7 +60,7 @@ app.get('/meta/:coinId', async (req, res) => {
     const {coinId} = req.params;
 
     try {
-        res.send(await coinTracker.getCoinMetadata(coinId));
+        res.send(await tradingPlatforms.ndax.getCoinMetadata(coinId));
     } catch (e) {
         res.send(e.message, 500);
     }
@@ -54,7 +69,7 @@ app.get('/meta/:coinId', async (req, res) => {
 
 app.get('/meta', async (req, res) => {
     try {
-        res.send(await coinTracker.getCoinMetadata());
+        res.send(await tradingPlatforms.ndax.getCoinMetadata());
     } catch (e) {
         res.send(e.message, 500);
     }
@@ -64,14 +79,14 @@ app.get('/meta', async (req, res) => {
 app.get('/currentTicker/:coinId', async (req, res) => {
     const {coinId} = req.params;
 
-    res.send(await coinTracker.fetchTicker(coinId));
+    res.send(await tradingPlatforms.ndax.fetchTicker(coinId));
 });
 
 app.get('/history/:coinId', async (req, res) => {
     const {coinId} = req.params;
 
     try {
-        res.send(await coinTracker.getTickerHistory(coinId));
+        res.send(await tradingPlatforms.ndax.getTickerHistory(coinId));
     } catch (e) {
         res.send(e.message, 500);
     }
@@ -81,7 +96,7 @@ app.get('/trades/:coinId', async (req, res) => {
     const {coinId} = req.params;
 
     try {
-        res.send(await coinTracker.getRecentTrades(coinId));
+        res.send(await tradingPlatforms.ndax.getRecentTrades(coinId));
     } catch (e) {
         res.send(e.message, 500);
     }
@@ -89,7 +104,7 @@ app.get('/trades/:coinId', async (req, res) => {
 
 app.post('/add-user-info', async (req, res) => {
     try {
-        await coinTracker.login(req.body);
+        await tradingPlatforms.ndax.login(req.body);
 
         res.send({}, 204);
     } catch (e) {
@@ -101,7 +116,7 @@ app.post('/cancelAllOrders/:userId', async (req, res) => {
     try {
         const {userId} = req.params;
 
-        await coinTracker.cancelAllOrders(userId);
+        await tradingPlatforms.ndax.cancelAllOrders(userId);
 
         res.send({}, 204);
     } catch (e) {
@@ -115,7 +130,7 @@ app.post('/order/:userId', async (req, res) => {
 
         const {coinId, price, amount, action = 'sell', type = 'limit'} = req.body;
 
-        const resp = await coinTracker.createOrder(userId, coinId, price, amount, action, type);
+        const resp = await tradingPlatforms.ndax.createOrder(userId, coinId, price, amount, action, type);
 
         res.send(resp);
     } catch (e) {
@@ -127,7 +142,7 @@ app.get('/order/:userId/id/:orderId', async (req, res) => {
     try {
         const {userId, orderId} = req.params;
 
-        const resp = await coinTracker.fetchOrder(userId, orderId);
+        const resp = await tradingPlatforms.ndax.fetchOrder(userId, orderId);
 
         res.send(resp);
     } catch (e) {
@@ -139,7 +154,7 @@ app.get('/trades/user/:userId/coin/:coinId', async (req, res) => {
     try {
         const {userId, coinId} = req.params;
 
-        const resp = await coinTracker.fetchMyTrades(userId, coinId);
+        const resp = await tradingPlatforms.ndax.getMyTrades(coinId, userId);
 
         res.send(resp);
     } catch (e) {
@@ -151,9 +166,11 @@ app.get('/trades/user/:userId/coin/:coinId/hours/:hours', async (req, res) => {
     try {
         const {userId, coinId, hours} = req.params;
 
-        const resp = await coinTracker.fetchMyTrades(userId, coinId, hours);
+        const {trades, ticker, minutesUp} = await tradingPlatforms.ndax.getMyTrades(coinId, userId, hours);
 
-        res.send(resp);
+        const aggregatedTrades = tradingAnalytics.aggregateMyTrades(coinId, minutesUp, trades, ticker);
+
+        res.send(aggregatedTrades);
     } catch (e) {
         res.send(e.message, 500);
     }
@@ -163,7 +180,7 @@ app.get('/trades/user/:userId/coin/:coinId/since-tracking-start', async (req, re
     try {
         const {userId, coinId} = req.params;
 
-        const resp = await coinTracker.fetchMyTrades(userId, coinId, null, true);
+        const resp = await tradingPlatforms.ndax.getMyTrades(coinId, userId, null, true);
 
         res.send(resp);
     } catch (e) {
