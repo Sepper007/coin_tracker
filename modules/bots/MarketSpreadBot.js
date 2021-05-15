@@ -16,6 +16,7 @@ class MarketSpreadBot extends TradingBot {
         this.editOrder = editOrder;
 
         this.openOrder = null;
+        this.remoteOrder = null;
 
         this.run();
     }
@@ -26,7 +27,20 @@ class MarketSpreadBot extends TradingBot {
             if (!this.openOrder) {
                 await this.checkMarketForBuyingOrder();
             } else {
-                await this.checkOpenOrder();
+                const { orderId } = this.openOrder;
+
+                try {
+                    this.remoteOrder = await this.fetchOrder(orderId);
+                } catch (e) {
+                    console.log(`fetching order ${orderId} for user ${this.userEmail} on platform ${this.platformName} failed with the following error ${e.message}, skipping sell logic for now`);
+                    continue;
+                }
+
+                if (this.remoteOrder.info.OrderState === 'FullyExecuted') {
+                    await this.reactToExecutedOrder();
+                } else {
+                    await this.adjustOpenOrder();
+                }
             }
 
             await utils.timeout(10 * 1000);
@@ -40,114 +54,110 @@ class MarketSpreadBot extends TradingBot {
 
         // Splice changes the array, so the "leftover" entries are any trades apart from the last 10
         return relevantTrades.splice(relevantTrades.length - 10, 10);
-    };
+    }
 
     async getLast10RelevantTradesAveragePrice(coinId) {
         const resp = await this.getLast10RelevantTrades(coinId);
 
         return resp.map(trade => trade.price).reduce((sum, val) => sum + val, 0) / resp.length;
-    };
-
-    async checkOpenOrder() {
-        const {coinId, price, orderId, amount} = this.openOrder;
-
-        let fetchedOrder;
-
-        try {
-            fetchedOrder = await this.fetchOrder(orderId);
-        } catch (e) {
-            console.log(`fetching order ${orderId} for user ${this.userEmail} on platform ${this.platformName} failed with the following error ${e.message}, skipping sell logic for now`);
-            return;
-        }
-
-        if (fetchedOrder.info.OrderState === 'FullyExecuted') {
-
-            // Last order was sell order, clear the order object to allow for new buy orders
-            if (this.openOrder.type === 'sell') {
-                this.openOrder = null;
-            } else {
-                // Last order was buy order, add subsequent sell oder
-                console.log(`Buy order for user ${this.userEmail}, platform ${this.platformName} and coinId "${coinId}" was fully executed, add limit stop oder`);
-
-                try {
-                    const currentTicker = await this.fetchTicker(coinId);
-
-                    const sellPrice = Math.max(price * 1.006, currentTicker.ask - 0.001);
-
-                    // Add sell order 0.5% above the price where we bought it
-                    const sellOrder = await this.createOrder(coinId, sellPrice, amount, 'sell', 'limit');
-
-                    // Remove old entry with new one
-                    this.openOrder = {
-                        coinId: coinId,
-                        amount: amount,
-                        orderId: sellOrder.id,
-                        price: sellPrice,
-                        type: 'sell'
-                    };
-
-                } catch (e) {
-                    console.log(`Creating Sell order for user ${this.userEmail}, platform ${this.platformName} and coinId ${coinId} failed, skipping logic for now`);
-                }
-            }
-
-
-        } else {
-            // Order wasn't fully processed yet, check if order shall be changed to unblock the bot
-
-            if (this.openOrder.type === 'sell') {
-                // Check if sell order was placed more than 1 minute ago
-                if (Date.now() - fetchedOrder.timestamp >= 1000 * 60 * 2) {
-                    // if so cut your losses, and change the sell price
-
-                    try {
-                        console.log(`Unprocessed sell order for user ${this.userEmail}, platform ${this.platformName} and coin ${coinId} is blocking the execution, adjust sell price to unblock bot`);
-
-                        const last10TradesAveragePrice = await this.getLast10RelevantTradesAveragePrice(coinId);
-
-                        const currentTicker = await this.fetchTicker(coinId);
-
-                        const sellPrice = Math.max(last10TradesAveragePrice * 1.005, currentTicker.ask - 0.001);
-
-                        const newOrder = await this.editOrder(coinId, orderId, sellPrice, Math.max(fetchedOrder.remaining, 10), 'sell', 'limit');
-
-                        // Update order object to new id:
-                        this.openOrder.orderId = newOrder.id;
-                    } catch (e) {
-                        console.log(`Fetching the recent trades failed for coin ${coinId} with the following error msg: ${e.message}`);
-                    }
-                }
-            } else {
-                // Buy order is currently being executed
-                // Check if buy order was placed more than 1 minute ago
-                if (Date.now() - fetchedOrder.timestamp >= 1000 * 60) {
-                    // if so change the buy price to unlock the bot
-                    try {
-                        console.log(`Unprocessed buy order for user ${this.userEmail}, platform ${this.platformName} and coin ${coinId} is blocking the execution, adjust buy price to unblock bot`);
-
-                        const last10TradesAveragePrice = await this.getLast10RelevantTradesAveragePrice(coinId);
-
-                        const currentTicker = await this.fetchTicker(coinId);
-
-                        const buyPrice = Math.min(currentTicker.bid + 0.0001, last10TradesAveragePrice * 0.993);
-
-                        const newOrder = await this.editOrder(coinId, orderId, buyPrice, Math.max(fetchedOrder.remaining, 10), 'buy', 'limit');
-
-                        this.openOrder = {
-                            ...this.openOrder,
-                            orderId: newOrder.id,
-                            price: buyPrice
-                        };
-                    } catch (e) {
-                        console.log(`Adjust buy order failed with the following error msg: ${e.message}`);
-                    }
-                }
-
-            }
-        }
-
     }
 
+    async reactToExecutedOrder() {
+        // The executed order was a sell order, clear the order object to allow for new buy orders
+        if (this.openOrder.type === 'sell') {
+            this.openOrder = null;
+        } else {
+            const {coinId, price, amount} = this.openOrder;
+
+            // Last order was buy order, add subsequent sell oder
+            console.log(`Buy order for user ${this.userEmail}, platform ${this.platformName} and coinId "${coinId}" was fully executed, add limit stop oder`);
+
+            try {
+                const currentTicker = await this.fetchTicker(coinId);
+
+                const sellPrice = Math.max(price * 1.006, currentTicker.ask - 0.001);
+
+                // Add sell order 0.5% above the price where we bought it
+                const sellOrder = await this.createOrder(coinId, sellPrice, amount, 'sell', 'limit');
+
+                // Replace old entry with new one
+                this.openOrder = {
+                    coinId: coinId,
+                    amount: amount,
+                    orderId: sellOrder.id,
+                    price: sellPrice,
+                    type: 'sell'
+                };
+
+            } catch (e) {
+                console.log(`Creating Sell order for user ${this.userEmail}, platform ${this.platformName} and coinId ${coinId} failed, skipping logic for now`);
+            }
+        }
+    }
+
+    async adjustOpenOrder() {
+        // Order wasn't fully processed yet, check if order shall be changed to unblock the bot
+        if (this.openOrder.type === 'sell') {
+            // Check if sell order was placed more than 1 minute ago
+            if (Date.now() - this.remoteOrder.timestamp >= 1000 * 60 * 2) {
+                // if so cut your losses, and change the sell price
+
+                try {
+                    console.log(`Unprocessed sell order for user ${this.userEmail}, platform ${this.platformName} and coin ${this.coinId} is blocking the execution, adjust sell price to unblock bot`);
+
+                    const last10TradesAveragePrice = await this.getLast10RelevantTradesAveragePrice(this.coinId);
+
+                    const currentTicker = await this.fetchTicker(this.coinId);
+
+                    const sellPrice = Math.max(last10TradesAveragePrice * 1.005, currentTicker.ask - 0.001);
+
+                    const amount = Math.max(this.remoteOrder.remaining, 10);
+
+                    const newOrder = await this.editOrder(this.coinId, orderId, sellPrice, amount, 'sell', 'limit');
+
+                    this.openOrder = {
+                        ...this.openOrder,
+                        orderId: newOrder.id,
+                        price: sellPrice,
+                        amount: amount
+                    };
+
+                    // Update order object to new id:
+                    this.openOrder.orderId = newOrder.id;
+                } catch (e) {
+                    console.log(`Fetching the recent trades failed for coin ${this.coinId} with the following error msg: ${e.message}`);
+                }
+            }
+        } else {
+            // Buy order is currently being executed
+            // Check if buy order was placed more than 1 minute ago
+            if (Date.now() - this.remoteOrder.timestamp >= 1000 * 60) {
+                // if so change the buy price to unlock the bot
+                try {
+                    console.log(`Unprocessed buy order for user ${this.userEmail}, platform ${this.platformName} and coin ${this.coinId} is blocking the execution, adjust buy price to unblock bot`);
+
+                    const last10TradesAveragePrice = await this.getLast10RelevantTradesAveragePrice(this.coinId);
+
+                    const currentTicker = await this.fetchTicker(this.coinId);
+
+                    const buyPrice = Math.min(currentTicker.bid + 0.0001, last10TradesAveragePrice * 0.993);
+
+                    const amount = Math.max(this.remoteOrder.remaining, 10);
+
+                    const newOrder = await this.editOrder(this.coinId, orderId, buyPrice, amount, 'buy', 'limit');
+
+                    this.openOrder = {
+                        ...this.openOrder,
+                        orderId: newOrder.id,
+                        price: buyPrice,
+                        amount: amount
+                    };
+                } catch (e) {
+                    console.log(`Adjust buy order failed with the following error msg: ${e.message}`);
+                }
+            }
+        }
+    }
 
     async checkMarketForBuyingOrder() {
         let trades;
