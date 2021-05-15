@@ -8,6 +8,7 @@ class MarketSpreadBot extends TradingBot {
         this.userEmail = userEmail;
         this.platformName = platformName;
         this.coinId = coinId;
+        this.amount = amount;
         this.getRecentTrades = getRecentTrades;
         this.fetchTicker = fetchTicker;
         this.fetchOrder = fetchOrder;
@@ -132,9 +133,11 @@ class MarketSpreadBot extends TradingBot {
 
                         const newOrder = await this.editOrder(coinId, orderId, buyPrice, Math.max(fetchedOrder.remaining, 10), 'buy', 'limit');
 
-                        order.orderId = newOrder.id;
-                        order.price = buyPrice;
-
+                        this.openOrder = {
+                            ...this.openOrder,
+                            orderId: newOrder.id,
+                            price: buyPrice
+                        };
                     } catch (e) {
                         console.log(`Adjust buy order failed with the following error msg: ${e.message}`);
                     }
@@ -252,7 +255,7 @@ class MarketSpreadBot extends TradingBot {
 
         const currentTicker = await this.fetchTicker(this.coinId);
 
-        console.log(`Making buy order for user ${this.userEmail}, platform ${this.platformName} and coin ${coinId}`);
+        console.log(`Creating buy order for user ${this.userEmail}, platform ${this.platformName} and coin ${this.coinId}`);
 
         try {
             // Use either the current lower ask or the rolling average - 0.06%
@@ -268,7 +271,7 @@ class MarketSpreadBot extends TradingBot {
                 type: 'buy'
             };
         } catch (e) {
-            console.log(`Creating buy order for user ${this.userEmail}, platform ${this.platformName} and coinId ${coinId} failed with the following error msg: ${e.message}, skipping logic for now`);
+            console.log(`Creating buy order for user ${this.userEmail}, platform ${this.platformName} and coinId ${this.coinId} failed with the following error msg: ${e.message}, skipping logic for now`);
         }
     }
 

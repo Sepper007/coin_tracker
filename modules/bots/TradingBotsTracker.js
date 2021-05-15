@@ -27,12 +27,14 @@ class TradingBotsTracker {
                     platFormName,
                     coinId,
                     amount,
-                    getRecentTrades,
-                    fetchTicker,
+                    // Bind all functions to the initial instance of the tradingPlatform, to prevent any issue with the this-context at runtime
+                    getRecentTrades.bind(tradingPlatformInstance),
+                    fetchTicker.bind(tradingPlatformInstance),
                     // Encapsulate all user-id specific methods here, so the bot instance doesn't have to know the user-id
-                    (...params) => fetchOrder(userId, ...params),
-                    (...params) => createOrder(userId, ...params),
-                    (...params) => editOrder(userId, ...params)
+                    // !!!! IMPORTANT: don't use arrow-functions here, as you can't manually override the this context !!!!
+                    (...params) => fetchOrder.bind(tradingPlatformInstance)(userId, ...params),
+                    (...params) => createOrder.bind(tradingPlatformInstance)(userId, ...params),
+                    (...params) => editOrder.bind(tradingPlatformInstance)(userId, ...params)
                 );
 
                 if (this.activeBots[userId] && this.activeBots[userId][platFormName] && this.activeBots[userId][platFormName][botType]) {

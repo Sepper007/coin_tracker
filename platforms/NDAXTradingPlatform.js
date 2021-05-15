@@ -132,7 +132,7 @@ class NDAXTradingPlatform {
     async getRecentTrades(coinId) {
         const marketId = NDAXTradingPlatform.getCoinMarketId(coinId);
 
-        // Get the last 100 trades
+        // Get the last 200 trades
         return await this.readOnlyInstance.fetchTrades(marketId, null, 200);
     }
 
