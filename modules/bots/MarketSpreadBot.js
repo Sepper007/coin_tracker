@@ -27,7 +27,7 @@ class MarketSpreadBot extends TradingBot {
             if (!this.openOrder) {
                 await this.checkMarketForBuyingOrder();
             } else {
-                const { orderId } = this.openOrder;
+                const {orderId} = this.openOrder;
 
                 try {
                     this.remoteOrder = await this.fetchOrder(orderId);
@@ -98,7 +98,7 @@ class MarketSpreadBot extends TradingBot {
     async adjustOpenOrder() {
         // Order wasn't fully processed yet, check if order shall be changed to unblock the bot
         if (this.openOrder.type === 'sell') {
-            // Check if sell order was placed more than 1 minute ago
+            // Check if sell order was placed more than 2 minutes ago
             if (Date.now() - this.remoteOrder.timestamp >= 1000 * 60 * 2) {
                 // if so cut your losses, and change the sell price
 
@@ -159,37 +159,14 @@ class MarketSpreadBot extends TradingBot {
         }
     }
 
-    async checkMarketForBuyingOrder() {
-        let trades;
-
-        try {
-            trades = await this.getRecentTrades(this.coinId);
-        } catch (e) {
-            console.log(`Fetching recent trades for ${this.coinId} failed, skipping logic for now`);
-            return;
-        }
-
-        // Filter out any trades with less than 100 coins, as they are minor
-        const relevantTrades = trades.filter(trade => trade.amount >= 40);
-
-        // Splice changes the array, so the "leftover" entries are any trades apart from the last 10
-        const last10Trades = relevantTrades.slice(relevantTrades.length - 10, relevantTrades.length);
-
-        if (last10Trades.length !== 10) {
-            return;
-        }
-
-        const last10TradesAveragePrice = last10Trades.map(trade => trade.price).reduce((sum, val) => sum + val, 0) / 10;
-
-        const averages = [];
-
+    static assessMarketTrends(trades) {
         const currentTimeInMs = Date.now();
 
         const offsetInMins = 5;
 
         const offsetInMs = 1000 * 60 * offsetInMins;
 
-        const tradesMadeWithinTheLast5Mins = relevantTrades.filter(trade => trade.timestamp >= currentTimeInMs - offsetInMs);
+        const tradesMadeWithinTheLast5Mins = trades.filter(trade => trade.timestamp >= currentTimeInMs - offsetInMs);
 
         const groupTradesByMins = [];
 
@@ -217,11 +194,12 @@ class MarketSpreadBot extends TradingBot {
 
         // Only allow 2 gaps max, otherwise the present data isn't significant enough
         if (groupAverages.length < offsetInMins - 1) {
-            console.log('Very little trading activity going on at the moment, skipping buying order until there is more activity');
-            return;
+            console.log(`Very little trading activity going on at the moment for coin ${this.coinId} on platform ${this.platformName}, skipping buying order until there is more activity`);
+            return false;
         }
 
         // If general trend is negative skip buying until market has stabilised
+
         const filteredGroupsLength = groupAverages.length;
 
         // If recent trend is positive skip further evaluations and proceed to buying logic
@@ -238,50 +216,68 @@ class MarketSpreadBot extends TradingBot {
 
             if (generalTrendNegative) {
                 console.log('The general market trend is negative at the moment, delay creation of new buying orders until market has stabilised');
-                return;
+                return false;
             }
         }
 
-        let subGroup, groupAverage;
+        return true;
+    }
 
-        for (let i = 0; i < relevantTrades.length; i += 10) {
-            // Put trades into chunk of 10 and build an average
+    // If this returns false, the current market situation isn't suggesting to add a buy order
+    static assessCurrentMarketSituation = (trades) => {
+        // Filter out any trades with less than 100 coins, as they are minor
+        const relevantTrades = trades.filter(trade => trade.amount >= 40);
 
-            subGroup = relevantTrades.splice(0, 10);
+        // Splice changes the array, so the "leftover" entries are any trades apart from the last 10
+        const last10Trades = relevantTrades.slice(relevantTrades.length - 10, relevantTrades.length);
 
-            groupAverage = subGroup.map(trade => trade.price).reduce((sum, val) => sum + val, 0) / subGroup.length;
-
-            averages.push(groupAverage);
+        if (last10Trades.length !== 10) {
+            console.log(`Not enough relevant trades present for coin ${this.coinId} on platform ${this.platformName}`);
+            return false;
         }
 
-        // Check that averages are going down, allow 1 exception and make sure it overall went down more than 0.5%
-        /*
-        for (let i = 1; i < averages.length; i++) {
-            if (averages[i] >= averages[i - 1]) {
-                numberOfPositiveTrends++;
-            }
-        }
-         */
+        const suggestPlacingBuyOrder = MarketSpreadBot.assessMarketTrends(relevantTrades);
 
-        const currentTicker = await this.fetchTicker(this.coinId);
+        return {
+            suggestPlacingBuyOrder: suggestPlacingBuyOrder,
+            // Return the average price of the last 10 transactions, if the general market trends suggests placing a buy order
+            average: suggestPlacingBuyOrder ? last10Trades.map(trade => trade.price).reduce((sum, val) => sum + val, 0) / 10 : null
+        };
+    };
 
-        console.log(`Creating buy order for user ${this.userEmail}, platform ${this.platformName} and coin ${this.coinId}`);
+    async checkMarketForBuyingOrder() {
+        let trades;
 
         try {
-            // Use either the current lower ask or the rolling average - 0.06%
-            const buyPrice = Math.min(currentTicker.bid + 0.001, last10TradesAveragePrice * 0.994);
-
-            const order = await this.createOrder(this.coinId, buyPrice, this.amount, 'buy', 'limit');
-
-            this.openOrder = {
-                coinId: this.coinId,
-                amount: this.amount,
-                orderId: order.id,
-                price: buyPrice,
-                type: 'buy'
-            };
+            trades = await this.getRecentTrades(this.coinId);
         } catch (e) {
-            console.log(`Creating buy order for user ${this.userEmail}, platform ${this.platformName} and coinId ${this.coinId} failed with the following error msg: ${e.message}, skipping logic for now`);
+            console.log(`Fetching recent trades for ${this.coinId} failed, skipping logic for now`);
+            return;
+        }
+
+        const marketAssessment = MarketSpreadBot.assessCurrentMarketSituation(trades);
+
+        if (marketAssessment.suggestPlacingBuyOrder) {
+            const currentTicker = await this.fetchTicker(this.coinId);
+
+            console.log(`Creating buy order for user ${this.userEmail}, platform ${this.platformName} and coin ${this.coinId}`);
+
+            try {
+                // Use either the current lower ask or the rolling average - 0.06%
+                const buyPrice = Math.min(currentTicker.bid + 0.001, marketAssessment.average * 0.994);
+
+                const order = await this.createOrder(this.coinId, buyPrice, this.amount, 'buy', 'limit');
+
+                this.openOrder = {
+                    coinId: this.coinId,
+                    amount: this.amount,
+                    orderId: order.id,
+                    price: buyPrice,
+                    type: 'buy'
+                };
+            } catch (e) {
+                console.log(`Creating buy order for user ${this.userEmail}, platform ${this.platformName} and coinId ${this.coinId} failed with the following error msg: ${e.message}, skipping logic for now`);
+            }
         }
     }
 
