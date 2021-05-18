@@ -144,7 +144,7 @@ class MarketSpreadBot extends TradingBot {
 
                     const amount = Math.max(this.remoteOrder.remaining, 10);
 
-                    const newOrder = await this.editOrder(this.coinId, orderId, buyPrice, amount, 'buy', 'limit');
+                    const newOrder = await this.editOrder(this.coinId, this.openOrder.orderId, buyPrice, amount, 'buy', 'limit');
 
                     this.openOrder = {
                         ...this.openOrder,
