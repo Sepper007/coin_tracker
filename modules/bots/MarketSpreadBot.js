@@ -23,6 +23,8 @@ class MarketSpreadBot extends TradingBot {
 
     async run() {
         while (this.isRunning) {
+            await utils.timeout(10 * 1000);
+
             // Periodically wake up and either make a new buy order or check if existing order went through or has to be updated
             if (!this.openOrder) {
                 await this.checkMarketForBuyingOrder();
@@ -42,8 +44,6 @@ class MarketSpreadBot extends TradingBot {
                     await this.adjustOpenOrder();
                 }
             }
-
-            await utils.timeout(10 * 1000);
         }
     }
 
@@ -113,13 +113,12 @@ class MarketSpreadBot extends TradingBot {
 
                     const amount = Math.max(this.remoteOrder.remaining, 10);
 
-                    const newOrder = await this.editOrder(this.coinId, orderId, sellPrice, amount, 'sell', 'limit');
+                    const newOrder = await this.editOrder(this.coinId, this.openOrder.orderId, sellPrice, amount, 'sell', 'limit');
 
                     this.openOrder = {
                         ...this.openOrder,
                         orderId: newOrder.id,
-                        price: sellPrice,
-                        amount: amount
+                        price: sellPrice
                     };
 
                     // Update order object to new id:
