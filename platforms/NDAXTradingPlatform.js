@@ -5,11 +5,23 @@ class NDAXTradingPlatform {
     static supportedCoins = {
         doge: {
             marketId: 'DOGE/CAD',
-            metaId: 'DOGE'
+            metaId: 'DOGE',
+            minimumQuantity: 10
         },
         xrp: {
             marketId: 'XRP/CAD',
-            metaId: 'XRP'
+            metaId: 'XRP',
+            minimumQuantity:10
+        },
+        eth: {
+            marketId: 'ETH/CAD',
+            metaId: 'ETH',
+            minimumQuantity: 0.0001
+        },
+        ada: {
+            marketId: 'ADA/CAD',
+            metaId: 'ADA',
+            minimumQuantity: 0.1
         }
     };
 
@@ -40,11 +52,21 @@ class NDAXTradingPlatform {
         const mappedCoin = NDAXTradingPlatform.supportedCoins[coinId];
 
         if (!mappedCoin) {
-            throw new Error(`Coin ${coinId} is not supported, the list of supported coins is: ${Object.keys(this.supportedCoins).join(',')}`);
+            throw new Error(`Coin ${coinId} is not supported, the list of supported coins is: ${Object.keys(NDAXTradingPlatform.supportedCoins).join(',')}`);
         }
 
         return mappedCoin.marketId;
     };
+
+    getMinimumQuantity(coinId) {
+        const mappedCoin = NDAXTradingPlatform.supportedCoins[coinId];
+
+        if (!mappedCoin) {
+            throw new Error(`Coin ${coinId} is not supported, the list of supported coins is: ${Object.keys(NDAXTradingPlatform.supportedCoins).join(',')}`);
+        }
+
+        return mappedCoin.minimumQuantity;
+    }
 
     async login(params) {
         const {apiKey, secret, uid} = params;

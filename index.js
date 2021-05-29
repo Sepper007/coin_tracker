@@ -33,15 +33,24 @@ const tradingBotsTracker = new TradingBotsTracker();
 app.post('/startMarketSpreadBot/coin/:coinId/user/:userId/amount/:amount', (req, res) => {
     const {coinId, userId, amount} = req.params;
 
-    tradingBotsTracker.startBotForUser(userId, TradingBotsTracker.botTypes.marketSpread, 'ndax', coinId, amount, tradingPlatforms.ndax);
+    // TODO: Once several platforms are supported, add these params to request body or url
+    const platformName = 'ndax';
+    const platformInstance = tradingPlatforms.ndax;
+
+    tradingBotsTracker.startBotForUser(userId, TradingBotsTracker.botTypes.marketSpread, platformName, coinId, amount, platformInstance);
 
     res.send('{}', 204);
 });
 
-app.post('/stopTracking/coin/:coinId/user/:userId', (req, res) => {
+app.post('/stopMarketSpreadBot/coin/:coinId/user/:userId', (req, res) => {
     const {coinId, userId} = req.params;
 
-    coinTracker.stop(coinId, userId);
+    const soft = req.query.soft || false;
+
+    // TODO: Once several platforms are supported, add these params to request body or url
+    const platformName = 'ndax';
+
+    tradingBotsTracker.stopBotForUser(userId, TradingBotsTracker.botTypes.marketSpread, platformName, coinId, soft);
 
     res.send('{}', 204);
 });

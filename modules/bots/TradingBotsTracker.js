@@ -17,7 +17,8 @@ class TradingBotsTracker {
                     fetchTicker,
                     fetchOrder,
                     createOrder,
-                    editOrder
+                    editOrder,
+                    getMinimumQuantity
                 } = tradingPlatformInstance;
 
 
@@ -34,14 +35,15 @@ class TradingBotsTracker {
                     // !!!! IMPORTANT: don't use arrow-functions here, as you can't manually override the this context !!!!
                     (...params) => fetchOrder.bind(tradingPlatformInstance)(userId, ...params),
                     (...params) => createOrder.bind(tradingPlatformInstance)(userId, ...params),
-                    (...params) => editOrder.bind(tradingPlatformInstance)(userId, ...params)
+                    (...params) => editOrder.bind(tradingPlatformInstance)(userId, ...params),
+                    (...params) => getMinimumQuantity.bind(tradingPlatformInstance)(...params)
                 );
 
-                if (this.activeBots[userId] && this.activeBots[userId][platFormName] && this.activeBots[userId][platFormName][botType]) {
+                if (this.activeBots[userId] && this.activeBots[userId][platFormName] && this.activeBots[userId][platFormName][botType] && this.activeBots[userId][platFormName][botType][coinId]) {
                     if (this.activeBots[userId][platFormName][botType].running || this.activeBots[userId][platFormName][botType].running.softShutdown) {
                         // There is already a bot running for the user, stop the existing one
-                        console.log(`There is already a bot running for user ${userId}, platform ${platFormName} and type ${botType}, stopping existing bot`);
-                        this.activeBots[userId][platFormName][botType].instance.stop();
+                        console.log(`There is already a bot running for user ${userId}, platform ${platFormName}, type ${botType} and coin ${coinId}, stopping existing bot`);
+                        this.activeBots[userId][platFormName][botType][coinId].instance.stop();
                     }
                 }
 
@@ -50,9 +52,12 @@ class TradingBotsTracker {
                     [platFormName]: {
                         ...this.activeBots[userId] && this.activeBots[userId][platFormName],
                         [botType]: {
-                            running: true,
-                            softShutdown: false,
-                            instance: bot
+                            ...this.activeBots[userId] && this.activeBots[userId][platFormName] && this.activeBots[userId][platFormName][botType],
+                            [coinId]: {
+                                running: true,
+                                softShutdown: false,
+                                instance: bot
+                            }
                         }
                     }
                 };
@@ -63,15 +68,19 @@ class TradingBotsTracker {
         }
     }
 
-    stopBotForUser(userId, platFormName, botType, soft = false) {
+    stopBotForUser(userId, botType, platFormName, coinId, soft = false) {
         // Check if bot exists and is currently running
-        if (!(this.activeBots[userId] && this.activeBots[userId][platFormName] && this.activeBots[userId][platFormName][botType])) {
+        if (!(this.activeBots[userId] && this.activeBots[userId][platFormName] && this.activeBots[userId][platFormName][botType] && this.activeBots[userId][platFormName][botType][coinId]
+            && this.activeBots[userId][platFormName][botType][coinId].running
+        )) {
             throw new Error(`There is no bot running for user ${userId}, platform ${platFormName} and type ${botType}`);
         }
 
-        this.activeBots[userId][platFormName][botType].stop(soft);
+        this.activeBots[userId][platFormName][botType][coinId].instance.stop(soft);
 
-        delete this.activeBots[userId][platFormName][botType];
+        delete this.activeBots[userId][platFormName][botType][coinId];
+
+        console.log(`Bot with type ${botType}, coin ${coinId} for platform ${platFormName} was stopped for user ${userId} `);
     }
 }
 

@@ -3,7 +3,7 @@ const TradingBot = require('./TradingBot');
 
 class MarketSpreadBot extends TradingBot {
 
-    constructor(userEmail, platformName, coinId, amount, getRecentTrades, fetchTicker, fetchOrder, createOrder, editOrder) {
+    constructor(userEmail, platformName, coinId, amount, getRecentTrades, fetchTicker, fetchOrder, createOrder, editOrder, getMinimumQuantity) {
         super();
         this.userEmail = userEmail;
         this.platformName = platformName;
@@ -14,6 +14,7 @@ class MarketSpreadBot extends TradingBot {
         this.fetchOrder = fetchOrder;
         this.createOrder = createOrder;
         this.editOrder = editOrder;
+        this.getMinimumQuantity = getMinimumQuantity;
 
         this.openOrder = null;
         this.remoteOrder = null;
@@ -45,19 +46,32 @@ class MarketSpreadBot extends TradingBot {
                 }
             }
         }
+
+        // Bot is having a soft shutdown, wait until open sell orders are finished, then shut down
+        if (this.softShutdown && this.openOrder && this.openOrder.type === 'sell') {
+            while(this.openOrder) {
+                // As long as there is an open sell order, keep on adjusting the price to make sure it gets filled
+                await this.adjustOpenOrder();
+
+                await utils.timeout(10 * 1000);
+            }
+        }
     }
 
-    async getLast10RelevantTrades(coinId) {
+    async getLast10RelevantTrades(coinId, ticker) {
         const trades = await this.getRecentTrades(coinId);
 
-        const relevantTrades = trades.filter(trade => trade.amount >= 100);
+        // Only consider transactions with value > $50, as everything else is minor
+        const threshold = (50 / ticker.bid);
+
+        const relevantTrades = trades.filter(trade => trade.amount >= threshold);
 
         // Splice changes the array, so the "leftover" entries are any trades apart from the last 10
         return relevantTrades.splice(relevantTrades.length - 10, 10);
     }
 
-    async getLast10RelevantTradesAveragePrice(coinId) {
-        const resp = await this.getLast10RelevantTrades(coinId);
+    async getLast10RelevantTradesAveragePrice(coinId, ticker) {
+        const resp = await this.getLast10RelevantTrades(coinId, ticker);
 
         return resp.map(trade => trade.price).reduce((sum, val) => sum + val, 0) / resp.length;
     }
@@ -67,7 +81,7 @@ class MarketSpreadBot extends TradingBot {
         if (this.openOrder.type === 'sell') {
             this.openOrder = null;
         } else {
-            const {coinId, price, amount} = this.openOrder;
+            const {coinId, amount} = this.openOrder;
 
             // Last order was buy order, add subsequent sell oder
             console.log(`Buy order for user ${this.userEmail}, platform ${this.platformName} and coinId "${coinId}" was fully executed, add limit stop oder`);
@@ -75,7 +89,9 @@ class MarketSpreadBot extends TradingBot {
             try {
                 const currentTicker = await this.fetchTicker(coinId);
 
-                const sellPrice = Math.max(price * 1.006, currentTicker.ask - 0.001);
+                const last10TradesAveragePrice = await this.getLast10RelevantTradesAveragePrice(this.coinId, currentTicker);
+
+                const sellPrice = Math.max(last10TradesAveragePrice * 1.006, currentTicker.ask - 0.001);
 
                 // Add sell order 0.5% above the price where we bought it
                 const sellOrder = await this.createOrder(coinId, sellPrice, amount, 'sell', 'limit');
@@ -105,13 +121,13 @@ class MarketSpreadBot extends TradingBot {
                 try {
                     console.log(`Unprocessed sell order for user ${this.userEmail}, platform ${this.platformName} and coin ${this.coinId} is blocking the execution, adjust sell price to unblock bot`);
 
-                    const last10TradesAveragePrice = await this.getLast10RelevantTradesAveragePrice(this.coinId);
-
                     const currentTicker = await this.fetchTicker(this.coinId);
+
+                    const last10TradesAveragePrice = await this.getLast10RelevantTradesAveragePrice(this.coinId, currentTicker);
 
                     const sellPrice = Math.max(last10TradesAveragePrice * 1.005, currentTicker.ask - 0.001);
 
-                    const amount = Math.max(this.remoteOrder.remaining, 10);
+                    const amount = Math.max(this.remoteOrder.remaining, this.getMinimumQuantity(this.coinId));
 
                     const newOrder = await this.editOrder(this.coinId, this.openOrder.orderId, sellPrice, amount, 'sell', 'limit');
 
@@ -135,21 +151,20 @@ class MarketSpreadBot extends TradingBot {
                 try {
                     console.log(`Unprocessed buy order for user ${this.userEmail}, platform ${this.platformName} and coin ${this.coinId} is blocking the execution, adjust buy price to unblock bot`);
 
-                    const last10TradesAveragePrice = await this.getLast10RelevantTradesAveragePrice(this.coinId);
-
                     const currentTicker = await this.fetchTicker(this.coinId);
+
+                    const last10TradesAveragePrice = await this.getLast10RelevantTradesAveragePrice(this.coinId, currentTicker);
 
                     const buyPrice = Math.min(currentTicker.bid + 0.0001, last10TradesAveragePrice * 0.993);
 
-                    const amount = Math.max(this.remoteOrder.remaining, 10);
+                    const amount = Math.max(this.remoteOrder.remaining, this.getMinimumQuantity(this.coinId));
 
                     const newOrder = await this.editOrder(this.coinId, this.openOrder.orderId, buyPrice, amount, 'buy', 'limit');
 
                     this.openOrder = {
                         ...this.openOrder,
                         orderId: newOrder.id,
-                        price: buyPrice,
-                        amount: amount
+                        price: buyPrice
                     };
                 } catch (e) {
                     console.log(`Adjust buy order failed with the following error msg: ${e.message}`);
@@ -223,15 +238,15 @@ class MarketSpreadBot extends TradingBot {
     }
 
     // If this returns false, the current market situation isn't suggesting to add a buy order
-    static assessCurrentMarketSituation = (trades) => {
-        // Filter out any trades with less than 100 coins, as they are minor
-        const relevantTrades = trades.filter(trade => trade.amount >= 40);
+    static assessCurrentMarketSituation = (trades, threshold, coinId, platformName) => {
+        // Filter out any trades with than the threshold, as they are minor
+        const relevantTrades = trades.filter(trade => trade.amount >= threshold);
 
         // Splice changes the array, so the "leftover" entries are any trades apart from the last 10
         const last10Trades = relevantTrades.slice(relevantTrades.length - 10, relevantTrades.length);
 
         if (last10Trades.length !== 10) {
-            console.log(`Not enough relevant trades present for coin ${this.coinId} on platform ${this.platformName}`);
+            console.log(`Not enough relevant trades present for coin ${coinId} on platform ${platformName}`);
             return false;
         }
 
@@ -254,11 +269,14 @@ class MarketSpreadBot extends TradingBot {
             return;
         }
 
-        const marketAssessment = MarketSpreadBot.assessCurrentMarketSituation(trades);
+        const currentTicker = await this.fetchTicker(this.coinId);
+
+        // Set threshold any offers with at least $50
+        const threshold = (50 / currentTicker.bid);
+
+        const marketAssessment = MarketSpreadBot.assessCurrentMarketSituation(trades, threshold, this.coinId, this.platformName);
 
         if (marketAssessment.suggestPlacingBuyOrder) {
-            const currentTicker = await this.fetchTicker(this.coinId);
-
             console.log(`Creating buy order for user ${this.userEmail}, platform ${this.platformName} and coin ${this.coinId}`);
 
             try {
