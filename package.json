@@ -18,6 +18,7 @@
   },
   "scripts": {
     "start": "nodemon --inspect index.js",
+    "heroku-postbuild": "cd client && yarn && yarn run build",
     "debug": "nodemon --inspect index.js"
   }
 }

@@ -18,15 +18,14 @@ const userAuthenticationApi = (app) => {
             // here is where you make a call to the database
             const user = users[0]
             if (email === user.email && password === user.password) {
-                console.log('Local strategy returned true')
                 return done(null, user)
             }
 
-            return done('User not found', false, {message: 'User not found'});
+            return done('User not found or invalid password', false, {message: 'User not found or invalid password'});
         }
     ));
 
-// tell passport how to serialize the user
+    // tell passport how to serialize the user
     passport.serializeUser((user, done) => {
         console.log('Inside serializeUser callback. User id is save to the session file store here')
         done(null, user.id);
@@ -46,6 +45,7 @@ const userAuthenticationApi = (app) => {
             return uuid() // use UUIDs for session IDs
         },
         store: new FileStore(),
+        // TODO: Use proper keyboard
         secret: 'keyboard cat',
         resave: false,
         saveUninitialized: true
@@ -69,17 +69,18 @@ const userAuthenticationApi = (app) => {
     });
 
     app.post('/login', (req, res, next) => {
-        console.log('Inside POST /login callback')
         passport.authenticate('local', (err, user, info) => {
-            console.log('Inside passport.authenticate() callback');
-            console.log(`req.session.passport: ${JSON.stringify(req.session.passport)}`)
-            console.log(`req.user: ${JSON.stringify(req.user)}`)
-            req.login(user, (err) => {
-                console.log('Inside req.login() callback')
-                console.log(`req.session.passport: ${JSON.stringify(req.session.passport)}`)
-                console.log(`req.user: ${JSON.stringify(req.user)}`)
-                return res.send('You were authenticated & logged in!\n');
-            })
+            if (err || info) {
+                res.status(500).send({ errorMessage : err || info});
+            } else {
+                req.login(user, (err) => {
+                    if (err) {
+                        res.status(500).send({ errorMessage : err});
+                    } else {
+                        res.send('{}');
+                    }
+                });
+            }
         })(req, res, next);
     });
 };

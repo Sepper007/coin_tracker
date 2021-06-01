@@ -1,5 +1,7 @@
 const express = require('express');
+const path = require('path');
 const {Pool} = require('pg');
+const auth = require('./auth');
 
 const userAuthenticationApi = require('./api/userAuthenticationApi');
 
@@ -9,9 +11,10 @@ const port = process.env.PORT || 3000;
 
 app.use(express.json());
 
-app.use(express.static('public'));
+// Serve static files from the React app
+app.use(express.static(path.join(__dirname, 'client/build')));
 
-// userAuthenticationApi(app);
+userAuthenticationApi(app);
 
 // Load different platforms
 const NDaxTradingPlatform = require('./platforms/NDAXTradingPlatform');
@@ -76,7 +79,7 @@ app.get('/meta/:coinId', async (req, res) => {
 
 });
 
-app.get('/meta', async (req, res) => {
+app.get('/meta', auth.required, async (req, res) => {
     try {
         res.send(await tradingPlatforms.ndax.getCoinMetadata());
     } catch (e) {
@@ -217,6 +220,12 @@ app.get('/test/db', async (req, res) => {
         console.error(err);
         res.send("Error " + err);
     }
+});
+
+// The "catchall" handler: for any request that doesn't
+// match one above, send back React's index.html file.
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname+'/client/public/index.html'));
 });
 
 
