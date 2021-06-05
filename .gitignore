@@ -5,3 +5,5 @@ sessions/*
 
 client/node_modules
 client/build
+
+table_definitions.sql

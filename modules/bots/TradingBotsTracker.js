@@ -40,7 +40,7 @@ class TradingBotsTracker {
                 );
 
                 if (this.activeBots[userId] && this.activeBots[userId][platFormName] && this.activeBots[userId][platFormName][botType] && this.activeBots[userId][platFormName][botType][coinId]) {
-                    if (this.activeBots[userId][platFormName][botType].running || this.activeBots[userId][platFormName][botType].running.softShutdown) {
+                    if (this.activeBots[userId][platFormName][botType].running || this.activeBots[userId][platFormName][botType].softShutdown) {
                         // There is already a bot running for the user, stop the existing one
                         console.log(`There is already a bot running for user ${userId}, platform ${platFormName}, type ${botType} and coin ${coinId}, stopping existing bot`);
                         this.activeBots[userId][platFormName][botType][coinId].instance.stop();

@@ -33,7 +33,7 @@ const TradingBotsTracker = require('./modules/bots/TradingBotsTracker');
 
 const tradingBotsTracker = new TradingBotsTracker();
 
-app.post('/startMarketSpreadBot/coin/:coinId/user/:userId/amount/:amount', (req, res) => {
+app.post('/api/startMarketSpreadBot/coin/:coinId/user/:userId/amount/:amount', (req, res) => {
     const {coinId, userId, amount} = req.params;
 
     // TODO: Once several platforms are supported, add these params to request body or url
@@ -45,7 +45,7 @@ app.post('/startMarketSpreadBot/coin/:coinId/user/:userId/amount/:amount', (req,
     res.send('{}', 204);
 });
 
-app.post('/stopMarketSpreadBot/coin/:coinId/user/:userId', (req, res) => {
+app.post('/api/stopMarketSpreadBot/coin/:coinId/user/:userId', (req, res) => {
     const {coinId, userId} = req.params;
 
     const soft = req.query.soft || false;
@@ -58,17 +58,17 @@ app.post('/stopMarketSpreadBot/coin/:coinId/user/:userId', (req, res) => {
     res.send('{}', 204);
 });
 
-app.get('/trackingStatus/:userId/id/:coinId', (req, res) => {
+app.get('/api/trackingStatus/:userId/id/:coinId', (req, res) => {
     const {userId, coinId} = req.params;
 
     res.send(coinTracker.status(userId, coinId));
 });
 
-app.get('/trackingStatus', (req, res) => {
+app.get('/api/trackingStatus', (req, res) => {
     res.send(coinTracker.status());
 });
 
-app.get('/meta/:coinId', async (req, res) => {
+app.get('/api/meta/:coinId', async (req, res) => {
     const {coinId} = req.params;
 
     try {
@@ -79,7 +79,7 @@ app.get('/meta/:coinId', async (req, res) => {
 
 });
 
-app.get('/meta', auth.required, async (req, res) => {
+app.get('/api/meta', auth.required, async (req, res) => {
     try {
         res.send(await tradingPlatforms.ndax.getCoinMetadata());
     } catch (e) {
@@ -88,13 +88,13 @@ app.get('/meta', auth.required, async (req, res) => {
 });
 
 
-app.get('/currentTicker/:coinId', async (req, res) => {
+app.get('/api/currentTicker/:coinId', async (req, res) => {
     const {coinId} = req.params;
 
     res.send(await tradingPlatforms.ndax.fetchTicker(coinId));
 });
 
-app.get('/history/:coinId', async (req, res) => {
+app.get('/api/history/:coinId', async (req, res) => {
     const {coinId} = req.params;
 
     try {
@@ -104,7 +104,7 @@ app.get('/history/:coinId', async (req, res) => {
     }
 });
 
-app.get('/trades/:coinId', async (req, res) => {
+app.get('/api/trades/:coinId', async (req, res) => {
     const {coinId} = req.params;
 
     try {
@@ -114,7 +114,7 @@ app.get('/trades/:coinId', async (req, res) => {
     }
 });
 
-app.post('/add-user-info', async (req, res) => {
+app.post('/api/add-user-info', async (req, res) => {
     try {
         await tradingPlatforms.ndax.login(req.body);
 
@@ -124,7 +124,7 @@ app.post('/add-user-info', async (req, res) => {
     }
 });
 
-app.post('/cancelAllOrders/:userId', async (req, res) => {
+app.post('/api/cancelAllOrders/:userId', async (req, res) => {
     try {
         const {userId} = req.params;
 
@@ -136,7 +136,7 @@ app.post('/cancelAllOrders/:userId', async (req, res) => {
     }
 });
 
-app.post('/order/:userId', async (req, res) => {
+app.post('/api/order/:userId', async (req, res) => {
     try {
         const {userId} = req.params;
 
@@ -150,7 +150,7 @@ app.post('/order/:userId', async (req, res) => {
     }
 });
 
-app.get('/order/:userId/id/:orderId', async (req, res) => {
+app.get('/api/order/:userId/id/:orderId', async (req, res) => {
     try {
         const {userId, orderId} = req.params;
 
@@ -162,7 +162,7 @@ app.get('/order/:userId/id/:orderId', async (req, res) => {
     }
 });
 
-app.get('/trades/user/:userId/coin/:coinId', async (req, res) => {
+app.get('/api/trades/user/:userId/coin/:coinId', async (req, res) => {
     try {
         const {userId, coinId} = req.params;
 
@@ -174,7 +174,7 @@ app.get('/trades/user/:userId/coin/:coinId', async (req, res) => {
     }
 });
 
-app.get('/trades/user/:userId/coin/:coinId/hours/:hours', async (req, res) => {
+app.get('/api/trades/user/:userId/coin/:coinId/hours/:hours', async (req, res) => {
     try {
         const {userId, coinId, hours} = req.params;
 
@@ -188,7 +188,7 @@ app.get('/trades/user/:userId/coin/:coinId/hours/:hours', async (req, res) => {
     }
 });
 
-app.get('/trades/user/:userId/coin/:coinId/since-tracking-start', async (req, res) => {
+app.get('/api/trades/user/:userId/coin/:coinId/since-tracking-start', async (req, res) => {
     try {
         const {userId, coinId} = req.params;
 
@@ -200,9 +200,8 @@ app.get('/trades/user/:userId/coin/:coinId/since-tracking-start', async (req, re
     }
 });
 
-app.get('/test/db', async (req, res) => {
+app.get('/api/test/db', async (req, res) => {
     try {
-        const {Pool} = require('pg');
         const pool = new Pool({
             connectionString: process.env.DATABASE_URL,
             ssl: {

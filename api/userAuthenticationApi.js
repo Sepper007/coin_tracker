@@ -3,6 +3,17 @@ const session = require('express-session');
 const FileStore = require('session-file-store')(session);
 const passport = require('passport');
 const LocalStrategy = require('passport-local').Strategy;
+const crypto = require('crypto');
+const {Pool} = require('pg');
+const nodemailer = require('nodemailer');
+
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: process.env.GMAIL_ACCOUNT,
+        pass: process.env.GMAIL_PW
+    }
+});
 
 const userAuthenticationApi = (app) => {
 
@@ -54,28 +65,14 @@ const userAuthenticationApi = (app) => {
     app.use(passport.initialize());
     app.use(passport.session());
 
-// create the homepage route at '/'
-    app.get('/', (req, res) => {
-        console.log('Inside the homepage callback')
-        console.log(req.sessionID)
-        res.send(`You got home page!\n`)
-    });
-
-// create the login get and post routes
-    app.get('/login', (req, res) => {
-        console.log('Inside GET /login callback')
-        console.log(req.sessionID)
-        res.send(`You got the login page!\n`)
-    });
-
-    app.post('/login', (req, res, next) => {
+    app.post('/api/login', (req, res, next) => {
         passport.authenticate('local', (err, user, info) => {
             if (err || info) {
-                res.status(500).send({ errorMessage : err || info});
+                res.status(500).send({errorMessage: err || info});
             } else {
                 req.login(user, (err) => {
                     if (err) {
-                        res.status(500).send({ errorMessage : err});
+                        res.status(500).send({errorMessage: err});
                     } else {
                         res.send('{}');
                     }
@@ -83,6 +80,93 @@ const userAuthenticationApi = (app) => {
             }
         })(req, res, next);
     });
+
+    const pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        ssl: {
+            rejectUnauthorized: false
+        }
+    });
+
+    app.post('/api/sign-up', async (req, res) => {
+        const {userEmail, password} = req.body;
+
+        if (!userEmail || !password) {
+            res.status(400).send({errorMessage: 'userEmail or password is invalid'});
+        } else {
+            try {
+                await createNewUser(userEmail, password);
+
+                res.status(204).send();
+            } catch (e) {
+                res.status(500).send(e.message);
+            }
+        }
+    });
+
+    app.get('/api/activate-profile/:uid', async (req, res) => {
+        const {uid} = req.params;
+
+        const client = await pool.connect();
+
+        const result = await client.query('SELECT t1.email, t2.activated FROM account_activations t1 inner join users t2 on t1.email = t2.email WHERE t1.uid = $1', [uid]);
+
+        if (!result || !result.rows.length) {
+            res.status(400).send({errorMessage: 'The activation id that was provided is not valid'});
+        } else {
+            const { email, activated } = result.rows[0];
+
+            if (activated) {
+                res.status(400).send({errorMessage: 'Your account was already activated'});
+            } else {
+                await client.query('UPDATE users SET activated = 1 WHERE email = $1', [email]);
+
+                res.status(204).send();
+            }
+        }
+    });
+
+
+    const createNewUser = async (userEmail, password) => {
+        // Creating a unique salt for a particular user
+        const salt = crypto.randomBytes(16).toString('hex');
+
+        // Hashing user's salt and password with 1000 iterations,
+        const hash = crypto.pbkdf2Sync(password, salt,
+            1000, 64, `sha512`).toString(`hex`);
+
+        const client = await pool.connect();
+
+        // Open transaction, and if any step along the way fails, rollback insert stmt
+        await client.query('BEGIN');
+
+        try {
+            await client.query(`insert into users (email, hash, salt, activated) values ($1, $2, $3, $4)`, [userEmail, hash, salt, 0]);
+
+            const activationUuid = uuid();
+
+            await client.query(`insert into account_activations (email, uid) values ($1, $2)`, [userEmail, activationUuid]);
+
+            const activationUrl = `${process.env.BASE_URL}/api/activate-profile/${activationUuid}`;
+
+            await transporter.sendMail({
+                from: process.env.GMAIL_ACCOUNT,
+                to: userEmail,
+                subject: 'Activate your crypto coin shenanigans account',
+                text: `Use the following url to activate your account ${activationUrl}`
+            });
+
+            await client.query('COMMIT');
+        } catch (e) {
+            console.log(`Sign-up process failed with the following error message: ${e.message}, rolling back db transaction`);
+
+            client.query('ROLLBACK');
+
+            throw new Error('sign-up failed');
+        } finally {
+            client.release();
+        }
+    }
 };
 
 module.exports = userAuthenticationApi;
