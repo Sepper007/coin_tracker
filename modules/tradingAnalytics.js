@@ -1,89 +1,92 @@
 const tradingAnalytics = {
-    aggregateMyTrades: (coinId, minutesUp, trades, ticker) => {
+    aggregateMyTrades: (coinId, marketId, minutesUp, trades, ticker) => {
         try {
+            const [firstCurr, secondCurr] = marketId.split('/');
+
             let sellsAccumulated = {
-                [coinId]: 0,
-                cad: 0
+                [firstCurr]: 0,
+                [secondCurr]: 0
             };
 
             let buysAccumulated = {
-                [coinId]: 0,
-                cad: 0
+                [firstCurr]: 0,
+                [secondCurr]: 0
             };
 
             let fees = {
-                [coinId]: 0,
-                cad: 0
+                [firstCurr]: 0,
+                [secondCurr]: 0
             };
 
             trades.forEach(trade => {
                 if (trade.side === 'buy') {
-                    buysAccumulated.cad += trade.cost;
-                    buysAccumulated[coinId] += trade.amount;
+                    buysAccumulated[secondCurr] += trade.cost;
+                    buysAccumulated[firstCurr] += trade.amount;
                 } else {
-                    sellsAccumulated.cad += trade.cost;
-                    sellsAccumulated[coinId] += trade.amount;
+                    sellsAccumulated[secondCurr] += trade.cost;
+                    sellsAccumulated[firstCurr] += trade.amount;
                 }
 
-                if (trade.fee.currency === 'CAD') {
-                    fees.cad += trade.fee.cost;
+                if (trade.fee.currency === secondCurr) {
+                    fees[secondCurr] += trade.fee.cost;
                 } else {
-                    fees[coinId] += trade.fee.cost;
+                    fees[firstCurr] += trade.fee.cost;
                 }
             });
 
-            const higherCoinAmount = Math.max(buysAccumulated[coinId], sellsAccumulated[coinId]);
+            const higherCoinAmount = Math.max(buysAccumulated[firstCurr], sellsAccumulated[firstCurr]);
 
-            const buysAvg = buysAccumulated.cad / buysAccumulated[coinId];
+            const buysAvg = buysAccumulated[secondCurr] / buysAccumulated[firstCurr];
 
-            const sellsAvg = sellsAccumulated.cad / sellsAccumulated[coinId];
+            const sellsAvg = sellsAccumulated[secondCurr] / sellsAccumulated[firstCurr];
 
-            const outstandingSellAmount = buysAccumulated[coinId] - sellsAccumulated[coinId];
+            const outstandingSellAmount = buysAccumulated[firstCurr] - sellsAccumulated[firstCurr];
 
             const currentCoinPrice = ticker.last;
 
             const historicFees = {
-                buy: fees[coinId] / sellsAccumulated[coinId],
-                sell: fees.cad / buysAccumulated.cad
+                buy: fees[firstCurr] / sellsAccumulated[firstCurr],
+                sell: fees[secondCurr] / buysAccumulated[secondCurr]
             };
 
             const outstandingFees = {
                 // Check for outstanding buys, as they are charging fees in the crypto target currency
                 coin: outstandingSellAmount < 0 ? Math.abs(outstandingSellAmount) * historicFees.buy : 0,
-                cad: outstandingSellAmount > 0 ? outstandingSellAmount * currentCoinPrice * historicFees.sell : 0
+                [secondCurr]: outstandingSellAmount > 0 ? outstandingSellAmount * currentCoinPrice * historicFees.sell : 0
             };
 
             const weightedAvg = {
                 // Check for outstanding sells, as they are charging fees in the fiat currency
-                cad: higherCoinAmount * (sellsAvg - buysAvg) - outstandingFees.cad - outstandingFees.coin * currentCoinPrice
+                [secondCurr]: higherCoinAmount * (sellsAvg - buysAvg) - outstandingFees[secondCurr] - outstandingFees.coin * currentCoinPrice
             };
 
             const absolutePL = {
-                [coinId]: buysAccumulated[coinId] - sellsAccumulated[coinId] - fees[coinId],
-                cad: sellsAccumulated.cad - buysAccumulated.cad - fees.cad
+                [firstCurr]: buysAccumulated[firstCurr] - sellsAccumulated[firstCurr] - fees[firstCurr],
+                [secondCurr]: sellsAccumulated[secondCurr] - buysAccumulated[secondCurr] - fees[secondCurr]
             };
 
-            const relativePL = absolutePL.cad + absolutePL[coinId] * currentCoinPrice;
+            const relativePL = absolutePL[secondCurr] + absolutePL[firstCurr] * currentCoinPrice;
 
             return {
+                tradingPair: marketId,
                 minutesUp: minutesUp,
                     // sinceTrackingStart ? (Date.now() - isTracking[coinId][userId].since) / (1000 * 60) : null,
                 currentPrice: currentCoinPrice,
                 buys: {
-                    [coinId]: buysAccumulated[coinId],
-                    cad: buysAccumulated.cad,
+                    [firstCurr]: buysAccumulated[firstCurr],
+                    [secondCurr]: buysAccumulated[secondCurr],
                     avgPrice: buysAvg
                 },
                 sells: {
-                    [coinId]: sellsAccumulated[coinId],
-                    cad: sellsAccumulated.cad,
+                    [firstCurr]: sellsAccumulated[firstCurr],
+                    [secondCurr]: sellsAccumulated[secondCurr],
                     avgPrice: sellsAvg
                 },
                 fees: fees,
                 profitAndLoss: {
-                    [coinId]: absolutePL[coinId],
-                    cad: absolutePL.cad,
-                    relativePL: `${relativePL} CAD`
+                    [firstCurr]: absolutePL[firstCurr],
+                    [secondCurr]: absolutePL[secondCurr],
+                    relativePL: `${relativePL} ${secondCurr}`
                 }
             };
 

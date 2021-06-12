@@ -14,13 +14,34 @@ app.use(express.json());
 // Serve static files from the React app
 app.use(express.static(path.join(__dirname, 'client/build')));
 
-userAuthenticationApi(app);
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: {
+        rejectUnauthorized: false
+    }
+});
+
+userAuthenticationApi(app, pool);
 
 // Load different platforms
 const NDaxTradingPlatform = require('./platforms/NDAXTradingPlatform');
+const BinanceTradingPlaform = require('./platforms/BinanceTradingPlatform');
 
 const tradingPlatforms = {
-    ndax: new NDaxTradingPlatform()
+    ndax: new NDaxTradingPlatform(),
+    binance: new BinanceTradingPlaform()
+};
+
+const getTradingPlatform = (req) => {
+    const { platform } = req.params;
+
+    const instance = tradingPlatforms[platform];
+
+    if (!platform || !instance) {
+        throw new Error(`Platform ${platform} is not supported, the supported values are: ${Object.keys(tradingPlatforms).join(',')}`);
+    }
+
+    return instance;
 };
 
 
@@ -33,32 +54,27 @@ const TradingBotsTracker = require('./modules/bots/TradingBotsTracker');
 
 const tradingBotsTracker = new TradingBotsTracker();
 
-app.post('/api/startMarketSpreadBot/coin/:coinId/user/:userId/amount/:amount', (req, res) => {
-    const {coinId, userId, amount} = req.params;
+app.post('/api/:platform/startMarketSpreadBot/coin/:coinId/user/:userId/amount/:amount', (req, res) => {
+    const {coinId, userId, amount, platform} = req.params;
 
-    // TODO: Once several platforms are supported, add these params to request body or url
-    const platformName = 'ndax';
-    const platformInstance = tradingPlatforms.ndax;
+    const platformInstance = getTradingPlatform(req);
 
-    tradingBotsTracker.startBotForUser(userId, TradingBotsTracker.botTypes.marketSpread, platformName, coinId, amount, platformInstance);
+    tradingBotsTracker.startBotForUser(userId, TradingBotsTracker.botTypes.marketSpread, platform, coinId, amount, platformInstance);
 
     res.send('{}', 204);
 });
 
-app.post('/api/stopMarketSpreadBot/coin/:coinId/user/:userId', (req, res) => {
-    const {coinId, userId} = req.params;
+app.post('/api/:platform/stopMarketSpreadBot/coin/:coinId/user/:userId', (req, res) => {
+    const {coinId, userId, platform} = req.params;
 
     const soft = req.query.soft || false;
 
-    // TODO: Once several platforms are supported, add these params to request body or url
-    const platformName = 'ndax';
-
-    tradingBotsTracker.stopBotForUser(userId, TradingBotsTracker.botTypes.marketSpread, platformName, coinId, soft);
+    tradingBotsTracker.stopBotForUser(userId, TradingBotsTracker.botTypes.marketSpread, platform, coinId, soft);
 
     res.send('{}', 204);
 });
 
-app.get('/api/trackingStatus/:userId/id/:coinId', (req, res) => {
+app.get('/api/:platform/trackingStatus/:userId/id/:coinId', (req, res) => {
     const {userId, coinId} = req.params;
 
     res.send(coinTracker.status(userId, coinId));
@@ -68,55 +84,80 @@ app.get('/api/trackingStatus', (req, res) => {
     res.send(coinTracker.status());
 });
 
-app.get('/api/meta/:coinId', async (req, res) => {
+app.get('/api/:platform/meta/:coinId', async (req, res) => {
     const {coinId} = req.params;
 
+    const platformInstance = getTradingPlatform(req);
+
     try {
-        res.send(await tradingPlatforms.ndax.getCoinMetadata(coinId));
+        res.send(await platformInstance.getCoinMetadata(coinId));
     } catch (e) {
         res.send(e.message, 500);
     }
 
 });
 
-app.get('/api/meta', auth.required, async (req, res) => {
+app.get('/api/:platform/meta', async (req, res) => {
     try {
-        res.send(await tradingPlatforms.ndax.getCoinMetadata());
+        const platformInstance = getTradingPlatform(req);
+
+        res.send(await platformInstance.getCoinMetadata());
     } catch (e) {
         res.send(e.message, 500);
     }
 });
 
 
-app.get('/api/currentTicker/:coinId', async (req, res) => {
-    const {coinId} = req.params;
-
-    res.send(await tradingPlatforms.ndax.fetchTicker(coinId));
-});
-
-app.get('/api/history/:coinId', async (req, res) => {
-    const {coinId} = req.params;
-
+app.get('/api/:platform/meta/user/:userId', async (req, res) => {
     try {
-        res.send(await tradingPlatforms.ndax.getTickerHistory(coinId));
+        const { userId } = req.params;
+
+        const platformInstance = getTradingPlatform(req);
+
+        res.send(await platformInstance.getCoinMetadata(userId));
     } catch (e) {
         res.send(e.message, 500);
     }
 });
 
-app.get('/api/trades/:coinId', async (req, res) => {
+
+app.get('/api/:platform/currentTicker/:coinId', async (req, res) => {
     const {coinId} = req.params;
 
+    const platformInstance = getTradingPlatform(req);
+
+    res.send(await platformInstance.fetchTicker(coinId));
+});
+
+app.get('/api/:platform/history/:coinId', async (req, res) => {
+    const {coinId} = req.params;
+
+    const platformInstance = getTradingPlatform(req);
+
     try {
-        res.send(await tradingPlatforms.ndax.getRecentTrades(coinId));
+        res.send(await platformInstance.getTickerHistory(coinId));
     } catch (e) {
         res.send(e.message, 500);
     }
 });
 
-app.post('/api/add-user-info', async (req, res) => {
+app.get('/api/:platform/trades/:coinId', async (req, res) => {
+    const {coinId} = req.params;
+
+    const platformInstance = getTradingPlatform(req);
+
     try {
-        await tradingPlatforms.ndax.login(req.body);
+        res.send(await platformInstance.getRecentTrades(coinId));
+    } catch (e) {
+        res.send(e.message, 500);
+    }
+});
+
+app.post('/api/:platform/add-user-info', async (req, res) => {
+    try {
+        const platformInstance = getTradingPlatform(req);
+
+        await platformInstance.login(req.body);
 
         res.send({}, 204);
     } catch (e) {
@@ -124,11 +165,13 @@ app.post('/api/add-user-info', async (req, res) => {
     }
 });
 
-app.post('/api/cancelAllOrders/:userId', async (req, res) => {
+app.post('/api/:platform/cancelAllOrders/:userId', async (req, res) => {
     try {
         const {userId} = req.params;
 
-        await tradingPlatforms.ndax.cancelAllOrders(userId);
+        const platformInstance = getTradingPlatform(req);
+
+        await platformInstance.cancelAllOrders(userId);
 
         res.send({}, 204);
     } catch (e) {
@@ -136,13 +179,15 @@ app.post('/api/cancelAllOrders/:userId', async (req, res) => {
     }
 });
 
-app.post('/api/order/:userId', async (req, res) => {
+app.post('/api/:platform/order/:userId', async (req, res) => {
     try {
         const {userId} = req.params;
+
+        const platformInstance = getTradingPlatform(req);
 
         const {coinId, price, amount, action = 'sell', type = 'limit'} = req.body;
 
-        const resp = await tradingPlatforms.ndax.createOrder(userId, coinId, price, amount, action, type);
+        const resp = await platformInstance.createOrder(userId, coinId, price, amount, action, type);
 
         res.send(resp);
     } catch (e) {
@@ -150,11 +195,13 @@ app.post('/api/order/:userId', async (req, res) => {
     }
 });
 
-app.get('/api/order/:userId/id/:orderId', async (req, res) => {
+app.get('/api/:platform/order/:userId/id/:orderId/coin/:coinId', async (req, res) => {
     try {
-        const {userId, orderId} = req.params;
+        const {userId, orderId, coinId} = req.params;
 
-        const resp = await tradingPlatforms.ndax.fetchOrder(userId, orderId);
+        const platformInstance = getTradingPlatform(req);
+
+        const resp = await platformInstance.fetchOrder(userId, orderId, coinId);
 
         res.send(resp);
     } catch (e) {
@@ -162,11 +209,13 @@ app.get('/api/order/:userId/id/:orderId', async (req, res) => {
     }
 });
 
-app.get('/api/trades/user/:userId/coin/:coinId', async (req, res) => {
+app.get('/api/:platform/trades/user/:userId/coin/:coinId', async (req, res) => {
     try {
         const {userId, coinId} = req.params;
 
-        const resp = await tradingPlatforms.ndax.getMyTrades(coinId, userId);
+        const platformInstance = getTradingPlatform(req);
+
+        const resp = await platformInstance.getMyTrades(coinId, userId);
 
         res.send(resp);
     } catch (e) {
@@ -174,13 +223,15 @@ app.get('/api/trades/user/:userId/coin/:coinId', async (req, res) => {
     }
 });
 
-app.get('/api/trades/user/:userId/coin/:coinId/hours/:hours', async (req, res) => {
+app.get('/api/:platform/trades/user/:userId/coin/:coinId/hours/:hours', async (req, res) => {
     try {
         const {userId, coinId, hours} = req.params;
 
-        const {trades, ticker, minutesUp} = await tradingPlatforms.ndax.getMyTrades(coinId, userId, hours);
+        const platformInstance = getTradingPlatform(req);
 
-        const aggregatedTrades = tradingAnalytics.aggregateMyTrades(coinId, minutesUp, trades, ticker);
+        const {trades, ticker, minutesUp, marketId} = await platformInstance.getMyTrades(coinId, userId, hours);
+
+        const aggregatedTrades = tradingAnalytics.aggregateMyTrades(coinId, marketId, minutesUp, trades, ticker);
 
         res.send(aggregatedTrades);
     } catch (e) {
@@ -188,16 +239,61 @@ app.get('/api/trades/user/:userId/coin/:coinId/hours/:hours', async (req, res) =
     }
 });
 
-app.get('/api/trades/user/:userId/coin/:coinId/since-tracking-start', async (req, res) => {
+app.get('/api/:platform/trades/user/:userId/coin/:coinId/since-tracking-start', async (req, res) => {
     try {
         const {userId, coinId} = req.params;
 
-        const resp = await tradingPlatforms.ndax.getMyTrades(coinId, userId, null, true);
+        const platformInstance = getTradingPlatform(req);
+
+        const resp = await platformInstance.ndax.getMyTrades(coinId, userId, null, true);
 
         res.send(resp);
     } catch (e) {
         res.send(e.message, 500);
     }
+});
+
+app.post('/api/platform', async (req, res) => {
+    try {
+        const { name, id } = req.body;
+
+        if (!name || !id) {
+            res.status(400).send('Id and name are required paramters');
+        } else {
+            const client = await pool.connect();
+
+            await client.query('Insert into platforms set id = $1, description = $2', [id, name]);
+
+            res.status(204).send();
+        }
+    } catch (e) {
+        res.send(e.message, 500);
+    }
+});
+
+
+app.post('/api/platform/:id/active/:active', async (req, res) => {
+    try {
+        const { id, active } = req.param;
+
+        await client.query('Update platforms set active = $1 where id = $2', [active, id]);
+
+        res.status(204).send();
+    } catch (e) {
+        res.send(e.message, 500);
+    }
+});
+
+app.get('/api/platform', async (req, res) => {
+   try {
+       const client = await pool.connect();
+
+       const result = await client.query('SELECT * FROM platforms');
+
+       res.send(result.rows);
+   } catch (e) {
+       res.send(e.message, 500);
+   }
 });
 
 app.get('/api/test/db', async (req, res) => {

@@ -15,38 +15,53 @@ const transporter = nodemailer.createTransport({
     }
 });
 
-const userAuthenticationApi = (app) => {
+const userAuthenticationApi = (app, pool) => {
 
-    const users = [
-        {id: '2f24vvg', email: 'test@test.com', password: 'password'}
-    ];
+    const createPasswordHash = (password, salt) => {
+        return crypto.pbkdf2Sync(password, salt, 1000, 64, `sha512`).toString(`hex`);
+    }
 
 // configure passport.js to use the local strategy
     passport.use(new LocalStrategy(
         {usernameField: 'email'},
-        (email, password, done) => {
-            console.log('Inside local strategy callback')
+        async (email, password, done) => {
             // here is where you make a call to the database
-            const user = users[0]
-            if (email === user.email && password === user.password) {
-                return done(null, user)
+
+            // Check if given user exists in the database
+            const client = await pool.connect();
+
+            const result = await client.query('SELECT email, hash, salt FROM users where email = $1', [email]);
+
+            if (!result.rows || !result.rows.length) {
+                return done('User not found or invalid password', false, {message: 'User not found or invalid password'});
             }
 
+            const {hash, salt} = result.rows[0];
+
+            // Apply same hashing logic as in the create user case
+            const calculatedHash = createPasswordHash(password, salt);
+
+            if (calculatedHash === hash) {
+                const user = {
+                    email, hash
+                };
+
+                return done(null, user);
+            }
+
+            // Return same error message as in the user not found case, so it's not exposed whether a given e-mail
+            // address has an account with this webpage.
             return done('User not found or invalid password', false, {message: 'User not found or invalid password'});
         }
     ));
 
-    // tell passport how to serialize the user
     passport.serializeUser((user, done) => {
-        console.log('Inside serializeUser callback. User id is save to the session file store here')
-        done(null, user.id);
+        done(null, user.email);
     });
 
-    passport.deserializeUser((id, done) => {
-        console.log('Inside deserializeUser callback')
-        console.log(`The user id passport saved in the session file store is: ${id}`)
-        const user = users[0].id === id ? users[0] : false;
-        done(null, user);
+    passport.deserializeUser((email, done) => {
+        // Todo enhance this logic wiht more user fields, if needed
+        done(null, {email});
     });
 
     app.use(session({
@@ -56,8 +71,7 @@ const userAuthenticationApi = (app) => {
             return uuid() // use UUIDs for session IDs
         },
         store: new FileStore(),
-        // TODO: Use proper keyboard
-        secret: 'keyboard cat',
+        secret: process.env.SESSION_SIGN_SECRET,
         resave: false,
         saveUninitialized: true
     }));
@@ -81,21 +95,14 @@ const userAuthenticationApi = (app) => {
         })(req, res, next);
     });
 
-    const pool = new Pool({
-        connectionString: process.env.DATABASE_URL,
-        ssl: {
-            rejectUnauthorized: false
-        }
-    });
-
     app.post('/api/sign-up', async (req, res) => {
-        const {userEmail, password} = req.body;
+        const {email, password} = req.body;
 
-        if (!userEmail || !password) {
-            res.status(400).send({errorMessage: 'userEmail or password is invalid'});
+        if (!email || !password) {
+            res.status(400).send({errorMessage: 'email or password is invalid'});
         } else {
             try {
-                await createNewUser(userEmail, password);
+                await createNewUser(email, password);
 
                 res.status(204).send();
             } catch (e) {
@@ -104,25 +111,36 @@ const userAuthenticationApi = (app) => {
         }
     });
 
+    app.get('/api/logged-in', async (req, res) => {
+        return res.status(200).send({authenticated: req.isAuthenticated()});
+    });
+
     app.get('/api/activate-profile/:uid', async (req, res) => {
-        const {uid} = req.params;
+        try {
 
-        const client = await pool.connect();
+            const {uid} = req.params;
 
-        const result = await client.query('SELECT t1.email, t2.activated FROM account_activations t1 inner join users t2 on t1.email = t2.email WHERE t1.uid = $1', [uid]);
+            const client = await pool.connect();
 
-        if (!result || !result.rows.length) {
-            res.status(400).send({errorMessage: 'The activation id that was provided is not valid'});
-        } else {
-            const { email, activated } = result.rows[0];
+            const result = await client.query('SELECT t1.id, t2.activated FROM account_activations t1 inner join users t2 on t1.id = t2.id WHERE t1.uid = $1', [uid]);
 
-            if (activated) {
-                res.status(400).send({errorMessage: 'Your account was already activated'});
+            if (!result || !result.rows.length) {
+                res.redirect('/#/login?accountActivated=error');
             } else {
-                await client.query('UPDATE users SET activated = 1 WHERE email = $1', [email]);
+                const {id, activated} = result.rows[0];
 
-                res.status(204).send();
+                if (activated) {
+                    res.redirect('/#/login?accountActivated=already_activated');
+                } else {
+                    await client.query('UPDATE users SET activated = 1 WHERE id = $1', [id]);
+
+                    res.redirect('/#/login?accountActivated=success');
+                }
             }
+        } catch (e) {
+            console.log(`An error occurred while trying to activate an account: ${e.message}`);
+
+            res.redirect('/#/login?accountActivated=error');
         }
     });
 
@@ -132,8 +150,7 @@ const userAuthenticationApi = (app) => {
         const salt = crypto.randomBytes(16).toString('hex');
 
         // Hashing user's salt and password with 1000 iterations,
-        const hash = crypto.pbkdf2Sync(password, salt,
-            1000, 64, `sha512`).toString(`hex`);
+        const hash = createPasswordHash(password, salt);
 
         const client = await pool.connect();
 
@@ -141,11 +158,15 @@ const userAuthenticationApi = (app) => {
         await client.query('BEGIN');
 
         try {
-            await client.query(`insert into users (email, hash, salt, activated) values ($1, $2, $3, $4)`, [userEmail, hash, salt, 0]);
+            const newId = (await client.query("select nextval('user_ids') as id")).rows[0].id;
+
+            await client.query("insert into users (id, email, hash, salt, activated) values ($1, $2, $3, $4, $5)", [newId, userEmail, hash, salt, 0]);
+
+            await client.query('insert into roles_user_mapping (role_id, user_id) values ($1, $2)', ['user', newId]);
 
             const activationUuid = uuid();
 
-            await client.query(`insert into account_activations (email, uid) values ($1, $2)`, [userEmail, activationUuid]);
+            await client.query('insert into account_activations (id, uid) values ($1, $2)', [newId, activationUuid]);
 
             const activationUrl = `${process.env.BASE_URL}/api/activate-profile/${activationUuid}`;
 

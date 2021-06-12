@@ -6,4 +6,7 @@ sessions/*
 client/node_modules
 client/build
 
-table_definitions.sql
+sql/table_definitions.sql
+sql/table_seed.sql
+sql/drop_tables.sql
+

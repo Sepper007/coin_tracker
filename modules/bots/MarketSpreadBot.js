@@ -24,7 +24,7 @@ class MarketSpreadBot extends TradingBot {
 
     async run() {
         while (this.isRunning) {
-            await utils.timeout(10 * 1000);
+            await utils.timeout(1 * 1000);
 
             // Periodically wake up and either make a new buy order or check if existing order went through or has to be updated
             if (!this.openOrder) {
@@ -33,13 +33,14 @@ class MarketSpreadBot extends TradingBot {
                 const {orderId} = this.openOrder;
 
                 try {
-                    this.remoteOrder = await this.fetchOrder(orderId);
+                    this.remoteOrder = await this.fetchOrder(orderId, this.coinId);
                 } catch (e) {
                     console.log(`fetching order ${orderId} for user ${this.userEmail} on platform ${this.platformName} failed with the following error ${e.message}, skipping sell logic for now`);
                     continue;
                 }
 
-                if (this.remoteOrder.info.OrderState === 'FullyExecuted') {
+                // Different platforms use different response structure
+                if (this.remoteOrder.info.OrderState === 'FullyExecuted' || this.remoteOrder.info.status === 'FILLED') {
                     await this.reactToExecutedOrder();
                 } else {
                     await this.adjustOpenOrder();
@@ -91,7 +92,7 @@ class MarketSpreadBot extends TradingBot {
 
                 const last10TradesAveragePrice = await this.getLast10RelevantTradesAveragePrice(this.coinId, currentTicker);
 
-                const sellPrice = Math.max(last10TradesAveragePrice * 1.006, currentTicker.ask - 0.001);
+                const sellPrice = Math.max(last10TradesAveragePrice * 1.005, currentTicker.ask - 0.001);
 
                 // Add sell order 0.5% above the price where we bought it
                 const sellOrder = await this.createOrder(coinId, sellPrice, amount, 'sell', 'limit');
@@ -114,8 +115,8 @@ class MarketSpreadBot extends TradingBot {
     async adjustOpenOrder() {
         // Order wasn't fully processed yet, check if order shall be changed to unblock the bot
         if (this.openOrder.type === 'sell') {
-            // Check if sell order was placed more than 2 minutes ago
-            if (Date.now() - this.remoteOrder.timestamp >= 1000 * 60 * 2) {
+            // Check if sell order was placed more than 30 seconds
+            if (Date.now() - this.remoteOrder.timestamp >= 1000 * 60) {
                 // if so cut your losses, and change the sell price
 
                 try {
@@ -145,7 +146,7 @@ class MarketSpreadBot extends TradingBot {
             }
         } else {
             // Buy order is currently being executed
-            // Check if buy order was placed more than 1 minute ago
+            // Check if buy order was placed more than 30 seconds ago
             if (Date.now() - this.remoteOrder.timestamp >= 1000 * 60) {
                 // if so change the buy price to unlock the bot
                 try {
@@ -155,7 +156,7 @@ class MarketSpreadBot extends TradingBot {
 
                     const last10TradesAveragePrice = await this.getLast10RelevantTradesAveragePrice(this.coinId, currentTicker);
 
-                    const buyPrice = Math.min(currentTicker.bid + 0.0001, last10TradesAveragePrice * 0.993);
+                    const buyPrice = Math.min(currentTicker.bid + 0.0001, last10TradesAveragePrice * 0.995);
 
                     const amount = Math.max(this.remoteOrder.remaining, this.getMinimumQuantity(this.coinId));
 
@@ -176,7 +177,7 @@ class MarketSpreadBot extends TradingBot {
     static assessMarketTrends(trades) {
         const currentTimeInMs = Date.now();
 
-        const offsetInMins = 5;
+        const offsetInMins = 2;
 
         const offsetInMs = 1000 * 60 * offsetInMins;
 
@@ -250,7 +251,7 @@ class MarketSpreadBot extends TradingBot {
             return false;
         }
 
-        const suggestPlacingBuyOrder = MarketSpreadBot.assessMarketTrends(relevantTrades);
+        const suggestPlacingBuyOrder = true; // MarketSpreadBot.assessMarketTrends(relevantTrades);
 
         return {
             suggestPlacingBuyOrder: suggestPlacingBuyOrder,
@@ -281,7 +282,7 @@ class MarketSpreadBot extends TradingBot {
 
             try {
                 // Use either the current lower ask or the rolling average - 0.06%
-                const buyPrice = Math.min(currentTicker.bid + 0.001, marketAssessment.average * 0.994);
+                const buyPrice = Math.min(currentTicker.bid + 0.001, marketAssessment.average * 0.995);
 
                 const order = await this.createOrder(this.coinId, buyPrice, this.amount, 'buy', 'limit');
 
@@ -293,7 +294,7 @@ class MarketSpreadBot extends TradingBot {
                     type: 'buy'
                 };
             } catch (e) {
-                console.log(`Creating buy order for user ${this.userEmail}, platform ${this.platformName} and coinId ${this.coinId} failed with the following error msg: ${e.message}, skipping logic for now`);
+                console.log(`Creating buy order for user ${this.userEmail}, platform $e{this.platformName} and coinId ${this.coinId} failed with the following error msg: ${e.message}, skipping logic for now`);
             }
         }
     }

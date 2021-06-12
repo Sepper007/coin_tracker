@@ -12,6 +12,7 @@ import LockOutlinedIcon from '@material-ui/icons/LockOutlined';
 import Typography from '@material-ui/core/Typography';
 import { makeStyles } from '@material-ui/core/styles';
 import Container from '@material-ui/core/Container';
+import Alert, {AlertStatus} from "./components/Alert";
 
 import axios from 'axios';
 
@@ -19,8 +20,8 @@ function Copyright() {
     return (
         <Typography variant="body2" color="textSecondary" align="center">
             {'Copyright © '}
-            <Link color="inherit" href="https://material-ui.com/">
-                Your Website
+            <Link color="inherit" href="/">
+                Crypto Coin Shenanigans
             </Link>{' '}
             {new Date().getFullYear()}
             {'.'}
@@ -48,7 +49,11 @@ const useStyles = makeStyles((theme) => ({
     },
 }));
 
-export default function SignIn() {
+export interface Props {
+    accountActivated: undefined | '' | 'success' | 'error' | 'already_activated'
+}
+
+export default function SignIn({accountActivated}: Props) {
     const classes = useStyles();
 
     const emailInputRef = useRef(null);
@@ -56,12 +61,14 @@ export default function SignIn() {
 
     const onSignInClicked = useCallback(async () => {
         const payload = {
+            // @ts-ignore
             email: emailInputRef.current.value,
+            // @ts-ignore
             password: passwordInputRef.current.value
         };
 
         try {
-            await axios.post('/login', payload);
+            await axios.post('/api/login', payload);
             alert('success')
         } catch (e) {
             console.log(e)
@@ -73,6 +80,11 @@ export default function SignIn() {
     return (
         <Container component="main" maxWidth="xs">
             <CssBaseline />
+            {accountActivated &&
+            accountActivated === 'already_activated' && <Alert status={AlertStatus.info} content={'Your account has already been activated'}/> ||
+                accountActivated === 'success' && <Alert status={AlertStatus.success} content={'Your account was successfully activated'}/> ||
+                accountActivated === 'error' && <Alert status={AlertStatus.error} content={'An error ocurred while trying to activate your account'}/>
+            }
             <div className={classes.paper}>
                 <Avatar className={classes.avatar}>
                     <LockOutlinedIcon />
@@ -80,7 +92,7 @@ export default function SignIn() {
                 <Typography component="h1" variant="h5">
                     Sign in
                 </Typography>
-                <div className={classes.form} noValidate>
+                <div className={classes.form}>
                     <TextField
                         variant="outlined"
                         margin="normal"
@@ -125,7 +137,7 @@ export default function SignIn() {
                             </Link>
                         </Grid>
                         <Grid item>
-                            <Link href="#" variant="body2">
+                            <Link href="#signUp" variant="body2">
                                 {"Don't have an account? Sign Up"}
                             </Link>
                         </Grid>
