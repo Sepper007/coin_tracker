@@ -1,4 +1,4 @@
-import React, { useRef, useCallback } from 'react';
+import React, {useRef, useCallback, useState} from 'react';
 import Avatar from '@material-ui/core/Avatar';
 import Button from '@material-ui/core/Button';
 import CssBaseline from '@material-ui/core/CssBaseline';
@@ -13,7 +13,7 @@ import Typography from '@material-ui/core/Typography';
 import { makeStyles } from '@material-ui/core/styles';
 import Container from '@material-ui/core/Container';
 import Alert, {AlertStatus} from "./components/Alert";
-
+import {useHistory} from "react-router";
 import axios from 'axios';
 
 function Copyright() {
@@ -50,14 +50,19 @@ const useStyles = makeStyles((theme) => ({
 }));
 
 export interface Props {
-    accountActivated: undefined | '' | 'success' | 'error' | 'already_activated'
+    accountActivated: undefined | '' | 'success' | 'error' | 'already_activated',
+    setIsLoggedIn: (loggedIn: boolean) => void;
 }
 
-export default function SignIn({accountActivated}: Props) {
+export default function SignIn({accountActivated, setIsLoggedIn}: Props) {
     const classes = useStyles();
 
     const emailInputRef = useRef(null);
     const passwordInputRef = useRef(null);
+
+    const [loginError, setLoginError] = useState('');
+
+    const history = useHistory();
 
     const onSignInClicked = useCallback(async () => {
         const payload = {
@@ -69,10 +74,14 @@ export default function SignIn({accountActivated}: Props) {
 
         try {
             await axios.post('/api/login', payload);
-            alert('success')
+
+            setIsLoggedIn(true);
+
+            setLoginError('');
+
+            history.push('/');
         } catch (e) {
-            console.log(e)
-            alert(`Login failed with error message ${e.response.data.errorMessage}`)
+            setLoginError(e.response.data.errorMessage);
         }
 
     }, []);
@@ -84,6 +93,9 @@ export default function SignIn({accountActivated}: Props) {
             accountActivated === 'already_activated' && <Alert status={AlertStatus.info} content={'Your account has already been activated'}/> ||
                 accountActivated === 'success' && <Alert status={AlertStatus.success} content={'Your account was successfully activated'}/> ||
                 accountActivated === 'error' && <Alert status={AlertStatus.error} content={'An error ocurred while trying to activate your account'}/>
+            }
+            {
+                loginError && <Alert status={AlertStatus.error} content={`Login failed with the following error message: ${loginError}`} />
             }
             <div className={classes.paper}>
                 <Avatar className={classes.avatar}>

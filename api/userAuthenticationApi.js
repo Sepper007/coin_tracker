@@ -6,6 +6,7 @@ const LocalStrategy = require('passport-local').Strategy;
 const crypto = require('crypto');
 const {Pool} = require('pg');
 const nodemailer = require('nodemailer');
+const auth = require('../auth');
 
 const transporter = nodemailer.createTransport({
     service: 'gmail',
@@ -30,20 +31,20 @@ const userAuthenticationApi = (app, pool) => {
             // Check if given user exists in the database
             const client = await pool.connect();
 
-            const result = await client.query('SELECT email, hash, salt FROM users where email = $1', [email]);
+            const result = await client.query('SELECT id, email, hash, salt FROM users where email = $1', [email]);
 
             if (!result.rows || !result.rows.length) {
                 return done('User not found or invalid password', false, {message: 'User not found or invalid password'});
             }
 
-            const {hash, salt} = result.rows[0];
+            const {hash, salt, id} = result.rows[0];
 
             // Apply same hashing logic as in the create user case
             const calculatedHash = createPasswordHash(password, salt);
 
             if (calculatedHash === hash) {
                 const user = {
-                    email, hash
+                    id, email, hash
                 };
 
                 return done(null, user);
@@ -56,12 +57,23 @@ const userAuthenticationApi = (app, pool) => {
     ));
 
     passport.serializeUser((user, done) => {
-        done(null, user.email);
+        done(null, {
+            id: user.id
+        });
     });
 
-    passport.deserializeUser((email, done) => {
-        // Todo enhance this logic wiht more user fields, if needed
-        done(null, {email});
+    passport.deserializeUser(async(user, done) => {
+        try {
+            const client = await pool.connect();
+
+            const result = await client.query('SELECT id, email FROM users where id = $1', [user.id]);
+
+            const {id, email} = result.rows[0];
+
+            done(null, {id, email});
+        } catch (e) {
+            done(e.message, {id: user.id});
+        }
     });
 
     app.use(session({
@@ -79,6 +91,22 @@ const userAuthenticationApi = (app, pool) => {
     app.use(passport.initialize());
     app.use(passport.session());
 
+    app.post('/api/sign-up', async (req, res) => {
+        const {email, password} = req.body;
+
+        if (!email || !password) {
+            res.status(400).send({errorMessage: 'email or password is invalid'});
+        } else {
+            try {
+                await createNewUser(email, password);
+
+                res.status(204).send();
+            } catch (e) {
+                res.status(500).send(e.message);
+            }
+        }
+    });
+
     app.post('/api/login', (req, res, next) => {
         passport.authenticate('local', (err, user, info) => {
             if (err || info) {
@@ -95,20 +123,11 @@ const userAuthenticationApi = (app, pool) => {
         })(req, res, next);
     });
 
-    app.post('/api/sign-up', async (req, res) => {
-        const {email, password} = req.body;
-
-        if (!email || !password) {
-            res.status(400).send({errorMessage: 'email or password is invalid'});
-        } else {
-            try {
-                await createNewUser(email, password);
-
-                res.status(204).send();
-            } catch (e) {
-                res.status(500).send(e.message);
-            }
-        }
+    app.post('/api/logout', (req, res) => {
+        req.session.destroy(() => {
+            res.clearCookie('connect.sid');
+            res.redirect('/');
+        });
     });
 
     app.get('/api/logged-in', async (req, res) => {
@@ -144,6 +163,17 @@ const userAuthenticationApi = (app, pool) => {
         }
     });
 
+    app.post('/api/add-tokens/platform/:platform', auth.required, async (req, res) => {
+        const {platform} = req.params;
+
+        const {privateKey, publicKey} = req.body;
+
+        if (!platform || !privateKey || !publicKey) {
+            res.status(400).send({errorMessage: 'parameters platform, privateKey and publicKey are mandatory!'});
+        }
+
+        req.status(204).send();
+    });
 
     const createNewUser = async (userEmail, password) => {
         // Creating a unique salt for a particular user
