@@ -1,20 +1,19 @@
 import React from 'react';
-import { fade, makeStyles, Theme, createStyles } from '@material-ui/core/styles';
+import { makeStyles, Theme, createStyles } from '@material-ui/core/styles';
 import AppBar from '@material-ui/core/AppBar';
 import Toolbar from '@material-ui/core/Toolbar';
 import IconButton from '@material-ui/core/IconButton';
 import Typography from '@material-ui/core/Typography';
-import InputBase from '@material-ui/core/InputBase';
 import Badge from '@material-ui/core/Badge';
 import MenuItem from '@material-ui/core/MenuItem';
 import Menu from '@material-ui/core/Menu';
-import MenuIcon from '@material-ui/icons/Menu';
-import SearchIcon from '@material-ui/icons/Search';
 import AccountCircle from '@material-ui/icons/AccountCircle';
 import MailIcon from '@material-ui/icons/Mail';
 import NotificationsIcon from '@material-ui/icons/Notifications';
 import MoreIcon from '@material-ui/icons/MoreVert';
 import axios from 'axios';
+import { useStore} from "../store";
+import Router from "../routing";
 
 const useStyles = makeStyles((theme: Theme) =>
     createStyles({
@@ -47,11 +46,11 @@ const useStyles = makeStyles((theme: Theme) =>
     }),
 );
 
-export interface Props {
-    onLogout: () => void;
-}
 
-export default function AppHeader({onLogout}: Props) {
+export default function AppHeader() {
+    // @ts-ignore
+    const setIsLoggedIn = useStore(store => store.setIsLoggedIn);
+
     const classes = useStyles();
     const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
     const [mobileMoreAnchorEl, setMobileMoreAnchorEl] = React.useState<null | HTMLElement>(null);
@@ -75,7 +74,7 @@ export default function AppHeader({onLogout}: Props) {
     const onLogOutClick = async () => {
         try {
             await axios.post('/api/logout');
-            onLogout();
+            setIsLoggedIn(false);
         } catch (e) {
             console.log(e.message);
         }

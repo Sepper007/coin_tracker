@@ -1,7 +1,7 @@
 {
-  "name": "doge-tracker",
+  "name": "coin-tracker",
   "version": "1.0.0",
-  "description": "Doge Coin Tracker",
+  "description": "Coin Tracker",
   "main": "index.js",
   "author": "Sebastian Oberhauser",
   "license": "MIT",

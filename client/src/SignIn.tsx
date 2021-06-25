@@ -14,6 +14,7 @@ import { makeStyles } from '@material-ui/core/styles';
 import Container from '@material-ui/core/Container';
 import Alert, {AlertStatus} from "./components/Alert";
 import {useHistory} from "react-router";
+import {useStore} from "./store";
 import axios from 'axios';
 
 function Copyright() {
@@ -50,12 +51,14 @@ const useStyles = makeStyles((theme) => ({
 }));
 
 export interface Props {
-    accountActivated: undefined | '' | 'success' | 'error' | 'already_activated',
-    setIsLoggedIn: (loggedIn: boolean) => void;
+    accountActivated: undefined | '' | 'success' | 'error' | 'already_activated'
 }
 
-export default function SignIn({accountActivated, setIsLoggedIn}: Props) {
+export default function SignIn({accountActivated}: Props) {
     const classes = useStyles();
+
+    // @ts-ignore
+    const setIsLoggedIn = useStore(state => state.setIsLoggedIn);
 
     const emailInputRef = useRef(null);
     const passwordInputRef = useRef(null);
@@ -149,7 +152,7 @@ export default function SignIn({accountActivated, setIsLoggedIn}: Props) {
                             </Link>
                         </Grid>
                         <Grid item>
-                            <Link href="#signUp" variant="body2">
+                            <Link href="/#/signUp" variant="body2">
                                 {"Don't have an account? Sign Up"}
                             </Link>
                         </Grid>

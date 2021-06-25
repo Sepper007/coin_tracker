@@ -290,7 +290,13 @@ app.get('/api/platform', async (req, res) => {
 
        const result = await client.query('SELECT * FROM platforms');
 
-       res.send(result.rows);
+       const mappedResp = result.rows.map(row => ({
+           id: row.id,
+           description: row.description,
+           active: !!row.currently_active
+       }));
+
+       res.send(mappedResp);
    } catch (e) {
        res.send(e.message, 500);
    }
