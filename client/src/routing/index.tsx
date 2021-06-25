@@ -7,6 +7,7 @@ import ProtectedRoute from "./ProtectedRoute";
 import Homepage from "../components/HomePage";
 import LoadingSpinner from "../components/LoadingSpinner";
 import { useStore} from "../store";
+import UnAuthorizedOnlyRoute from "./UnAuthorizedOnlyRoute";
 
 export default function Router() {
 
@@ -21,10 +22,10 @@ export default function Router() {
             <ProtectedRoute path='/' exact>
                 <Homepage />
             </ProtectedRoute>
-            <Route path='/login' exact component={(props: any) => <SignIn accountActivated={props.location.search && new URLSearchParams(props.location.search).get('accountActivated')}/>}/>
-            <Route path='/signUp' exact>
+            <UnAuthorizedOnlyRoute path='/login' exact component={(location: any) => <SignIn accountActivated={location.search && new URLSearchParams(location.search).get('accountActivated')}/>}/>
+            <UnAuthorizedOnlyRoute path='/signUp' exact>
                 <SignUp/>
-            </Route>
+            </UnAuthorizedOnlyRoute>
         </Switch>
     </HashRouter>;
 }

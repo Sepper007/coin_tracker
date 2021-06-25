@@ -57,20 +57,32 @@ const userAuthenticationApi = (app, pool) => {
     ));
 
     passport.serializeUser((user, done) => {
+        console.log('Seralise')
         done(null, {
             id: user.id
         });
     });
 
-    passport.deserializeUser(async(user, done) => {
+    const userCache = {};
+
+    passport.deserializeUser(async (user, done) => {
         try {
+            if (userCache[user.id]) {
+                done(null, userCache[user.id]);
+                return;
+            }
+
             const client = await pool.connect();
 
             const result = await client.query('SELECT id, email FROM users where id = $1', [user.id]);
 
             const {id, email} = result.rows[0];
 
-            done(null, {id, email});
+            const userEntry = {id, email};
+
+            userCache[id] = userEntry;
+
+            done(null, userEntry);
         } catch (e) {
             done(e.message, {id: user.id});
         }
@@ -163,17 +175,88 @@ const userAuthenticationApi = (app, pool) => {
         }
     });
 
-    app.post('/api/add-tokens/platform/:platform', auth.required, async (req, res) => {
+    const encryptionAlgorithm = 'aes-256-ctr';
+
+    app.post('/api/:platform/tokens', auth.required, async (req, res) => {
         const {platform} = req.params;
 
-        const {privateKey, publicKey} = req.body;
+        try {
+            const {privateKey, publicKey, userId} = req.body;
 
-        if (!platform || !privateKey || !publicKey) {
-            res.status(400).send({errorMessage: 'parameters platform, privateKey and publicKey are mandatory!'});
+            if (!platform || !privateKey || !publicKey || !userId) {
+                res.status(400).send({errorMessage: 'parameters platform, userId, privateKey and publicKey are mandatory!'});
+            }
+
+            // Cut to 16, just to be sure
+            const inputVector = crypto.randomBytes(8).toString('hex').slice(0, 16);
+
+            const secretKey = process.env.ENCRYPTION_KEY;
+
+            const cipher = crypto.createCipheriv(encryptionAlgorithm, secretKey, inputVector);
+
+            const encryptedPrivateKey = Buffer.concat([cipher.update(privateKey), cipher.final()]);
+
+            const client = await pool.connect();
+
+            await client.query('Insert into account_mappings (user_id, platform, platform_user_id, private_key, public_key, input_vector) values ($1,$2,$3,$4,$5,$6)',
+                [req.user.id, platform, userId, encryptedPrivateKey.toString('hex'), publicKey, inputVector]);
+
+            res.status(204).send();
+
+        } catch (e) {
+            console.log(`An error occurred while trying to persist a platform credentials mapping for user ${req.user} and platform ${platform}: ${e.message}`);
+            res.status(500).send({errorMessage: e.message});
         }
-
-        req.status(204).send();
     });
+
+    app.get('/api/:platform/tokens', auth.required, async (req, res) => {
+        const { platform } = req.params;
+
+        try {
+            const client = await pool.connect();
+
+            const result =await client.query('Select user_id, platform, platform_user_id, private_key, public_key, input_vector from account_mappings ' +
+                'where user_id = $1 and platform = $2', [req.user.id, platform]);
+
+            if (!result.rows.length) {
+                res.status(500).send({errorMessage: `No mapping currently exists for user ${req.user.id} and platform ${platform}`});
+            } else {
+                const { user_id, platform, platform_user_id, private_key, public_key, input_vector } = result.rows[0];
+
+                const secretKey = process.env.ENCRYPTION_KEY;
+
+                const decipher = crypto.createDecipheriv(encryptionAlgorithm, secretKey, input_vector);
+
+                const decryptedPrivateKey = Buffer.concat([decipher.update(Buffer.from(private_key, 'hex')), decipher.final()]);
+
+                res.status(200).send({
+                    platform,
+                    userId: platform_user_id,
+                    private_key: decryptedPrivateKey.toString(),
+                    publicKey: public_key
+                });
+            }
+        } catch (e) {
+            console.log(`An error occurred while retrieving the tokens for user ${req.user} and platform ${platform}`);
+            res.status(500).send({errorMessage: e.message});
+        }
+    });
+
+    app.delete('/api/:platform/tokens', auth.required, async (req, res) => {
+        const {platform} = req.params;
+
+        try {
+            const client = await pool.connect();
+
+            await client.query('Delete from account_mappings where user_id = $1 and platform = $2', [req.user.id, platform]);
+
+            res.status(204).send();
+        } catch (e) {
+            console.log(`An error occurred while deleting the tokens for user ${req.user} and platform ${platform}`);
+            res.status(500).send({errorMessage: e.message});
+        }
+    });
+
 
     const createNewUser = async (userEmail, password) => {
         // Creating a unique salt for a particular user

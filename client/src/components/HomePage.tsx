@@ -28,8 +28,6 @@ interface Platform {
 export default function Homepage() {
     const classes = useStyles();
 
-
-    console.log('Home Page')
     const [platforms, setPlatforms] = useState<Platform[]>([]);
 
     useEffect(() => {
