@@ -23,27 +23,43 @@ const pool = new Pool({
 
 userAuthenticationApi(app, pool);
 
-// Load different platforms
-const NDaxTradingPlatform = require('./platforms/NDAXTradingPlatform');
-const BinanceTradingPlaform = require('./platforms/BinanceTradingPlatform');
+// Load supported platforms
+const tradingPlatforms = require('./utils/supportedTradingPlatforms');
 
-const tradingPlatforms = {
-    ndax: new NDaxTradingPlatform(),
-    binance: new BinanceTradingPlaform()
-};
+const userPlatformInstanceCache = {};
 
 const getTradingPlatform = (req) => {
     const { platform } = req.params;
 
-    const instance = tradingPlatforms[platform];
-
-    if (!platform || !instance) {
+    if (!tradingPlatforms[platform]) {
         throw new Error(`Platform ${platform} is not supported, the supported values are: ${Object.keys(tradingPlatforms).join(',')}`);
     }
 
+    const userPlatformInstances = userPlatformInstanceCache[req.user.id];
+
+    if (userPlatformInstances && userPlatformInstances[platform]) {
+        return userPlatformInstances[platform];
+    }
+
+    const accountCredentials = req.user.accountMappings[platform];
+
+    if (!accountCredentials) {
+        throw new Error(`User has no credentials stored for platform ${platform}`);
+    }
+
+    const instance = new tradingPlatforms[platform]({
+        uid: accountCredentials.userId,
+        apiKey: accountCredentials.publicKey,
+        secret: accountCredentials.privateKey
+    });
+
+    userPlatformInstanceCache[req.user.id] = {
+        ...userPlatformInstanceCache[req.user.id],
+        [platform]: instance
+    };
+
     return instance;
 };
-
 
 // Load different modules
 const coinTracker = require('./coinTracker');
@@ -54,7 +70,7 @@ const TradingBotsTracker = require('./modules/bots/TradingBotsTracker');
 
 const tradingBotsTracker = new TradingBotsTracker();
 
-app.post('/api/:platform/startMarketSpreadBot/coin/:coinId/user/:userId/amount/:amount', (req, res) => {
+app.post('/api/:platform/startMarketSpreadBot/coin/:coinId/user/:userId/amount/:amount', auth.required, (req, res) => {
     const {coinId, userId, amount, platform} = req.params;
 
     const platformInstance = getTradingPlatform(req);
@@ -74,17 +90,22 @@ app.post('/api/:platform/stopMarketSpreadBot/coin/:coinId/user/:userId', (req, r
     res.send('{}', 204);
 });
 
-app.get('/api/:platform/trackingStatus/:userId/id/:coinId', (req, res) => {
-    const {userId, coinId} = req.params;
 
-    res.send(coinTracker.status(userId, coinId));
+
+app.get('/api/:platform/meta', auth.required, async(req, res) => {
+    try {
+        const { platform } = req.params;
+
+        res.send({
+            supportedCoins: tradingPlatforms[platform].supportedCoins
+        });
+    } catch (e) {
+        res.status(500).send(e.message);
+    }
+
 });
 
-app.get('/api/trackingStatus', (req, res) => {
-    res.send(coinTracker.status());
-});
-
-app.get('/api/:platform/meta/:coinId', async (req, res) => {
+app.get('/api/:platform/meta/:coinId', auth.required, async (req, res) => {
     const {coinId} = req.params;
 
     const platformInstance = getTradingPlatform(req);
@@ -97,7 +118,7 @@ app.get('/api/:platform/meta/:coinId', async (req, res) => {
 
 });
 
-app.get('/api/:platform/meta', async (req, res) => {
+app.get('/api/:platform/meta', auth.required, async (req, res) => {
     try {
         const platformInstance = getTradingPlatform(req);
 
@@ -108,7 +129,7 @@ app.get('/api/:platform/meta', async (req, res) => {
 });
 
 
-app.get('/api/:platform/meta/user/:userId', async (req, res) => {
+app.get('/api/:platform/meta/user/:userId', auth.required, async (req, res) => {
     try {
         const { userId } = req.params;
 
@@ -121,7 +142,7 @@ app.get('/api/:platform/meta/user/:userId', async (req, res) => {
 });
 
 
-app.get('/api/:platform/currentTicker/:coinId', async (req, res) => {
+app.get('/api/:platform/currentTicker/:coinId', auth.required, async (req, res) => {
     const {coinId} = req.params;
 
     const platformInstance = getTradingPlatform(req);
@@ -129,7 +150,7 @@ app.get('/api/:platform/currentTicker/:coinId', async (req, res) => {
     res.send(await platformInstance.fetchTicker(coinId));
 });
 
-app.get('/api/:platform/history/:coinId', async (req, res) => {
+app.get('/api/:platform/history/:coinId', auth.required, async (req, res) => {
     const {coinId} = req.params;
 
     const platformInstance = getTradingPlatform(req);
@@ -141,7 +162,7 @@ app.get('/api/:platform/history/:coinId', async (req, res) => {
     }
 });
 
-app.get('/api/:platform/trades/:coinId', async (req, res) => {
+app.get('/api/:platform/trades/:coinId', auth.required, async (req, res) => {
     const {coinId} = req.params;
 
     const platformInstance = getTradingPlatform(req);
@@ -153,7 +174,7 @@ app.get('/api/:platform/trades/:coinId', async (req, res) => {
     }
 });
 
-app.post('/api/:platform/add-user-info', async (req, res) => {
+app.post('/api/:platform/add-user-info', auth.required, async (req, res) => {
     try {
         const platformInstance = getTradingPlatform(req);
 
@@ -165,7 +186,7 @@ app.post('/api/:platform/add-user-info', async (req, res) => {
     }
 });
 
-app.post('/api/:platform/cancelAllOrders/:userId', async (req, res) => {
+app.post('/api/:platform/cancelAllOrders/:userId', auth.required, async (req, res) => {
     try {
         const {userId} = req.params;
 
@@ -179,7 +200,7 @@ app.post('/api/:platform/cancelAllOrders/:userId', async (req, res) => {
     }
 });
 
-app.post('/api/:platform/order/:userId', async (req, res) => {
+app.post('/api/:platform/order/:userId', auth.required, async (req, res) => {
     try {
         const {userId} = req.params;
 
@@ -195,7 +216,7 @@ app.post('/api/:platform/order/:userId', async (req, res) => {
     }
 });
 
-app.get('/api/:platform/order/:userId/id/:orderId/coin/:coinId', async (req, res) => {
+app.get('/api/:platform/order/:userId/id/:orderId/coin/:coinId', auth.required, async (req, res) => {
     try {
         const {userId, orderId, coinId} = req.params;
 
@@ -209,7 +230,7 @@ app.get('/api/:platform/order/:userId/id/:orderId/coin/:coinId', async (req, res
     }
 });
 
-app.get('/api/:platform/trades/user/:userId/coin/:coinId', async (req, res) => {
+app.get('/api/:platform/trades/user/:userId/coin/:coinId', auth.required, async (req, res) => {
     try {
         const {userId, coinId} = req.params;
 
@@ -223,7 +244,7 @@ app.get('/api/:platform/trades/user/:userId/coin/:coinId', async (req, res) => {
     }
 });
 
-app.get('/api/:platform/trades/user/:userId/coin/:coinId/hours/:hours', async (req, res) => {
+app.get('/api/:platform/trades/user/:userId/coin/:coinId/hours/:hours', auth.required, async (req, res) => {
     try {
         const {userId, coinId, hours} = req.params;
 
@@ -239,7 +260,7 @@ app.get('/api/:platform/trades/user/:userId/coin/:coinId/hours/:hours', async (r
     }
 });
 
-app.get('/api/:platform/trades/user/:userId/coin/:coinId/since-tracking-start', async (req, res) => {
+app.get('/api/:platform/trades/user/:userId/coin/:coinId/since-tracking-start', auth.required, async (req, res) => {
     try {
         const {userId, coinId} = req.params;
 
@@ -253,7 +274,7 @@ app.get('/api/:platform/trades/user/:userId/coin/:coinId/since-tracking-start', 
     }
 });
 
-app.post('/api/platform', async (req, res) => {
+app.post('/api/platform', auth.required, auth.adminOnly, async (req, res) => {
     try {
         const { name, id } = req.body;
 
@@ -272,7 +293,7 @@ app.post('/api/platform', async (req, res) => {
 });
 
 
-app.post('/api/platform/:id/active/:active', async (req, res) => {
+app.post('/api/platform/:id/active/:active', auth.required, auth.adminOnly, async (req, res) => {
     try {
         const { id, active } = req.param;
 
@@ -284,16 +305,17 @@ app.post('/api/platform/:id/active/:active', async (req, res) => {
     }
 });
 
-app.get('/api/platform', async (req, res) => {
+app.get('/api/platform', auth.required, async (req, res) => {
    try {
        const client = await pool.connect();
 
-       const result = await client.query('SELECT * FROM platforms');
+       const result = await client.query('SELECT id, description, currently_active FROM platforms');
 
        const mappedResp = result.rows.map(row => ({
            id: row.id,
            description: row.description,
-           active: !!row.currently_active
+           active: !!row.currently_active,
+           userCredentialsAvailable: !!req.user.accountMappings[row.id]
        }));
 
        res.send(mappedResp);

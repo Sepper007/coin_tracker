@@ -2,6 +2,8 @@ const ccxt = require('ccxt/ccxt');
 
 class NDAXTradingPlatform {
 
+    static readOnlyInstance = new ccxt.ndax();
+
     static supportedCoins = {
         doge: {
             marketId: 'DOGE/CAD',
@@ -25,17 +27,8 @@ class NDAXTradingPlatform {
         }
     };
 
-    constructor() {
-        this.readOnlyInstance = new ccxt.ndax();
-        this.userSpecificInstances = {};
-    }
-
-    getInstanceForUser(userId) {
-        if (!this.userSpecificInstances[userId]) {
-            throw new Error(`User with id ${userId} isn't logged into Platform NDAX`);
-        }
-
-        return this.userSpecificInstances[userId];
+    constructor(params) {
+        login(params);
     }
 
     static getCoinMetaId(coinId) {
@@ -75,51 +68,27 @@ class NDAXTradingPlatform {
             throw new Error('The parameters apiKey, secret and uid are required')
         }
 
-        this.userSpecificInstances[uid] = new ccxt.ndax({
+        this.userSpecificInstance = new ccxt.ndax({
             apiKey: apiKey,
             secret: secret,
             uid: uid
         });
     }
 
-    async cancelAllOrders(userId) {
-        const userSpecificNDAXInstance = this.userSpecificInstances[userId];
-
-        if (!userSpecificNDAXInstance) {
-            throw new Error(`User with id $ {userId}is not logged in`);
-        }
-
-        await userSpecificNDAXInstance.cancelAllOrders();
+    async cancelAllOrders() {
+        await this.userSpecificInstance.cancelAllOrders();
     }
 
     async createOrder(userId, coinId, price, amount, action = 'sell', type = 'limit') {
-        const userSpecificNDAXInstance = this.userSpecificInstances[userId];
-
-        if (!userSpecificNDAXInstance) {
-            throw new Error(`User with id ${userId}is not logged in`);
-        }
-
-        return await userSpecificNDAXInstance.createOrder(NDAXTradingPlatform.getCoinMarketId(coinId), type, action, amount, price);
+        return await this.userSpecificInstance.createOrder(NDAXTradingPlatform.getCoinMarketId(coinId), type, action, amount, price);
     }
 
-    async editOrder(userId, coinId, orderId, price, amount, action = 'sell', type = 'limit') {
-        const userSpecificNDAXInstance = this.userSpecificInstances[userId];
-
-        if (!userSpecificNDAXInstance) {
-            throw new Error(`User with id ${userId}is not logged in`);
-        }
-
-        return await userSpecificNDAXInstance.editOrder(orderId, NDAXTradingPlatform.getCoinMarketId(coinId), type, action, amount, price);
+    async editOrder(coinId, orderId, price, amount, action = 'sell', type = 'limit') {
+        return await this.userSpecificInstance.editOrder(orderId, NDAXTradingPlatform.getCoinMarketId(coinId), type, action, amount, price);
     }
 
-    async fetchOrder(userId, orderId) {
-        const userSpecificNDAXInstance = this.userSpecificInstances[userId];
-
-        if (!userSpecificNDAXInstance) {
-            throw new Error(`User with id ${userId}is not logged in`);
-        }
-
-        return await userSpecificNDAXInstance.fetchOrder(orderId);
+    async fetchOrder(orderId) {
+        return await this.userSpecificInstance.fetchOrder(orderId);
     }
 
     async getCoinMetadata(coinId) {
@@ -129,7 +98,7 @@ class NDAXTradingPlatform {
             metaId = NDAXTradingPlatform.getCoinMetaId(coinId);
         }
 
-        const resp = await this.readOnlyInstance.fetchCurrencies();
+        const resp = await NDAXTradingPlatform.readOnlyInstance.fetchCurrencies();
 
         if (metaId) {
             return resp[metaId];
@@ -141,21 +110,21 @@ class NDAXTradingPlatform {
     async fetchTicker(coinId) {
         const marketId = NDAXTradingPlatform.getCoinMarketId(coinId);
 
-        return await this.readOnlyInstance.fetchTicker(marketId);
+        return await NDAXTradingPlatform.readOnlyInstance.fetchTicker(marketId);
     }
 
     async getTickerHistory(coinId, from, to) {
         const marketId = NDAXTradingPlatform.getCoinMarketId(coinId);
 
         // Fetch the ticker values for the last days hours, broken down by the minute
-        return await this.readOnlyInstance.fetchOHLCV(marketId, '1m', Date.now() - (2 * 24 * 60 * 60 * 1000))
+        return await NDAXTradingPlatform.readOnlyInstance.fetchOHLCV(marketId, '1m', Date.now() - (2 * 24 * 60 * 60 * 1000))
     }
 
     async getRecentTrades(coinId) {
         const marketId = NDAXTradingPlatform.getCoinMarketId(coinId);
 
         // Get the last 200 trades
-        return await this.readOnlyInstance.fetchTrades(marketId, null, 200);
+        return await NDAXTradingPlatform.readOnlyInstance.fetchTrades(marketId, null, 200);
     }
 
     async getMyTrades(coinId, userId, hours = 2, sinceTrackingStart) {
@@ -165,7 +134,8 @@ class NDAXTradingPlatform {
             throw new Error(`User with id ${userId}is not logged in`);
         }
 
-        const since = sinceTrackingStart ? NDAXTradingPlatform.isTracking()[coinId][userId].since : Date.now() - 1000 * 60 * 60 * hours;
+        //const since = sinceTrackingStart ? NDAXTradingPlatform.isTracking()[coinId][userId].since : Date.now() - 1000 * 60 * 60 * hours;
+        const since = Date.now() - 1000 * 60 * 60 * hours;
 
         const trades = await userSpecificNDAXInstance.fetchMyTrades(NDAXTradingPlatform.getCoinMarketId(coinId), since);
 

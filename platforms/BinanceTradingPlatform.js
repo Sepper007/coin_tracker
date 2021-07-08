@@ -2,6 +2,8 @@ const ccxt = require('ccxt/ccxt');
 
 class BinanceTradingPlatform {
 
+    static readOnlyInstance = new ccxt.binance();
+
     static supportedCoins = {
         doge: {
             marketId: 'DOGE/USDT',
@@ -30,17 +32,8 @@ class BinanceTradingPlatform {
         }
     };
 
-    constructor() {
-        this.readOnlyInstance = new ccxt.binance();
-        this.userSpecificInstances = {};
-    }
-
-    getInstanceForUser(userId) {
-        if (!this.userSpecificInstances[userId]) {
-            throw new Error(`User with id ${userId} isn't logged into Platform Binance`);
-        }
-
-        return this.userSpecificInstances[userId];
+    constructor(params) {
+        this.login(params);
     }
 
     static getCoinMetaId(coinId) {
@@ -73,75 +66,44 @@ class BinanceTradingPlatform {
         return mappedCoin.minimumQuantity;
     }
 
-    async login(params) {
+    login(params) {
         const {apiKey, secret, uid} = params;
 
         if (!apiKey || !secret || !uid) {
             throw new Error('The parameters apiKey, secret and uid are required')
         }
 
-        this.userSpecificInstances[uid] = new ccxt.binance({
+        this.userSpecificInstance = new ccxt.binance({
             apiKey: apiKey,
             secret: secret,
             uid: uid
         });
     }
 
-    async cancelAllOrders(userId) {
-        const userSpecificBinanceInstance = this.userSpecificInstances[userId];
-
-        if (!userSpecificBinanceInstance) {
-            throw new Error(`User with id $ {userId}is not logged in`);
-        }
-
-        await userSpecificBinanceInstance.cancelAllOrders();
+    async cancelAllOrders() {
+        await this.userSpecificInstance.cancelAllOrders();
     }
 
-    async createOrder(userId, coinId, price, amount, action = 'sell', type = 'limit') {
-        const userSpecificBinanceInstance = this.userSpecificInstances[userId];
-
-        if (!userSpecificBinanceInstance) {
-            throw new Error(`User with id ${userId}is not logged in`);
-        }
-
-        return await userSpecificBinanceInstance.createOrder(BinanceTradingPlatform.getCoinMarketId(coinId), type, action, amount, price);
+    async createOrder(coinId, price, amount, action = 'sell', type = 'limit') {
+        return await this.userSpecificInstance.createOrder(BinanceTradingPlatform.getCoinMarketId(coinId), type, action, amount, price);
     }
 
     async editOrder(userId, coinId, orderId, price, amount, action = 'sell', type = 'limit') {
-        const userSpecificBinanceInstance = this.userSpecificInstances[userId];
-
-        if (!userSpecificBinanceInstance) {
-            throw new Error(`User with id ${userId}is not logged in`);
-        }
-
-        return await userSpecificBinanceInstance.editOrder(orderId, BinanceTradingPlatform.getCoinMarketId(coinId), type, action, amount, price);
+        return await this.userSpecificInstance.editOrder(orderId, BinanceTradingPlatform.getCoinMarketId(coinId), type, action, amount, price);
     }
 
     async fetchOrder(userId, orderId, coinId) {
-        const userSpecificBinanceInstance = this.userSpecificInstances[userId];
-
-        if (!userSpecificBinanceInstance) {
-            throw new Error(`User with id ${userId}is not logged in`);
-        }
-
-        return await userSpecificBinanceInstance.fetchOrder(orderId, BinanceTradingPlatform.getCoinMarketId(coinId));
+        return await this.userSpecificInstance.fetchOrder(orderId, BinanceTradingPlatform.getCoinMarketId(coinId));
     }
 
     async getCoinMetadata(userId, coinId) {
-        const userSpecificBinanceInstance = this.userSpecificInstances[userId];
-
-        if (!userSpecificBinanceInstance) {
-            throw new Error(`User with id ${userId}is not logged in`);
-        }
-
-
         let metaId;
 
         if (coinId) {
             metaId = BinanceTradingPlatform.getCoinMetaId(coinId);
         }
 
-        const resp = await userSpecificBinanceInstance.fetchCurrencies();
+        const resp = await this.userSpecificInstance.fetchCurrencies();
 
         if (metaId) {
             return resp[metaId];
@@ -153,35 +115,31 @@ class BinanceTradingPlatform {
     async fetchTicker(coinId) {
         const marketId = BinanceTradingPlatform.getCoinMarketId(coinId);
 
-        return await this.readOnlyInstance.fetchTicker(marketId);
+        return await BinanceTradingPlatform.readOnlyInstance.fetchTicker(marketId);
     }
 
     async getTickerHistory(coinId, from, to) {
         const marketId = BinanceTradingPlatform.getCoinMarketId(coinId);
 
         // Fetch the ticker values for the last days hours, broken down by the minute
-        return await this.readOnlyInstance.fetchOHLCV(marketId, '1m', Date.now() - (2 * 24 * 60 * 60 * 1000))
+        return await BinanceTradingPlatform.readOnlyInstance.fetchOHLCV(marketId, '1m', Date.now() - (2 * 24 * 60 * 60 * 1000))
     }
 
     async getRecentTrades(coinId) {
         const marketId = BinanceTradingPlatform.getCoinMarketId(coinId);
 
         // Get the last 200 trades
-        return await this.readOnlyInstance.fetchTrades(marketId, Date.now() - (2 * 60 * 1000), 1000);
+        return await BinanceTradingPlatform.readOnlyInstance.fetchTrades(marketId, Date.now() - (2 * 60 * 1000), 1000);
     }
 
     async getMyTrades(coinId, userId, hours = 2, sinceTrackingStart) {
-        const userSpecificBinanceInstance = this.userSpecificInstances[userId];
+        // const since = sinceTrackingStart ? BinanceTradingPlatform.isTracking()[coinId][userId].since : Date.now() - 1000 * 60 * 60 * hours;
 
-        if (!userSpecificBinanceInstance) {
-            throw new Error(`User with id ${userId}is not logged in`);
-        }
-
-        const since = sinceTrackingStart ? BinanceTradingPlatform.isTracking()[coinId][userId].since : Date.now() - 1000 * 60 * 60 * hours;
+        const since = Date.now() - 1000 * 60 * 60 * hours;;
 
         const marketId = BinanceTradingPlatform.getCoinMarketId(coinId);
 
-        const trades = await userSpecificBinanceInstance.fetchMyTrades(marketId, since);
+        const trades = await this.userSpecificInstance.fetchMyTrades(marketId, since);
 
         const ticker = await this.fetchTicker(coinId);
 

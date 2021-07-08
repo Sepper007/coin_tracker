@@ -1,13 +1,14 @@
-import React, {useEffect, useState} from 'react';
-import GridLayout from "./GridLayout";
-import {createStyles, MenuItem} from "@material-ui/core";
+import React, {useCallback, useEffect, useState} from 'react';
+import {createStyles, List, ListItem, ListItemText, MenuItem, Theme} from "@material-ui/core";
 import Select from "@material-ui/core/Select";
 import InputLabel from "@material-ui/core/InputLabel";
 import FormControl from "@material-ui/core/FormControl";
 import {makeStyles} from '@material-ui/core/styles';
 import axios from 'axios';
+import Grid from "@material-ui/core/Grid";
+import Paper from "@material-ui/core/Paper/Paper";
 
-const useStyles = makeStyles(() =>
+const useStyles = makeStyles((theme: Theme) =>
     createStyles({
         formControl: {
             margin: 10,
@@ -15,7 +16,14 @@ const useStyles = makeStyles(() =>
         },
         selectEmpty: {
             marginTop: 1,
-        }
+        },
+        root: {
+            flexGrow: 1,
+        },
+        paper: {
+            textAlign: 'center',
+            color: theme.palette.text.secondary,
+        },
     }),
 );
 
@@ -29,6 +37,26 @@ export default function Homepage() {
     const classes = useStyles();
 
     const [platforms, setPlatforms] = useState<Platform[]>([]);
+
+    const [selectedPlatform, setSelectedPlatform] = useState<Platform | undefined>(undefined);
+
+    const [platformMeta, setPlatformMeta] = useState<any>({});
+
+    const onPlatformSelectionChange = useCallback((evt) => {
+        setSelectedPlatform(platforms.find(platform => platform.id === evt.target.value));
+    }, [setSelectedPlatform, platforms]);
+
+    useEffect(() => {
+        const fn = async () => {
+            if (selectedPlatform) {
+                const {data} = await axios.get(`/api/${selectedPlatform.id}/meta`);
+
+                setPlatformMeta(data);
+            }
+        };
+
+        fn();
+    }, [selectedPlatform, setPlatformMeta]);
 
     useEffect(() => {
         const fn = async () => {
@@ -44,16 +72,17 @@ export default function Homepage() {
         fn();
     }, []);
 
+    // @ts-ignore
     return <div>
         <FormControl variant={'outlined'} className={classes.formControl}>
             <InputLabel id="demo-simple-select-outlined-label">Platform</InputLabel>
             <Select
                 labelId="demo-simple-select-outlined-label"
                 id="demo-simple-select-outlined"
-
+                onChange={onPlatformSelectionChange}
                 label="Platform"
             >
-                 {!platforms.length && <MenuItem value={''} />}
+                {!platforms.length && <MenuItem value={''}/>}
                 {
                     platforms
                         .filter(platform => platform.active)
@@ -61,6 +90,35 @@ export default function Homepage() {
                 }
             </Select>
         </FormControl>
-        <GridLayout/>
+        <div className={classes.root}>
+            <Grid container spacing={3}>
+                <Grid item xs={6}>
+                    <Paper className={classes.paper}>
+                        {
+                            selectedPlatform && <>
+                                <h3>Supported Trading Pairs</h3>
+                                <List>
+                                    {
+                                        platformMeta.supportedCoins && Object.values(platformMeta.supportedCoins).map(coin => (
+                                            <ListItem>
+                                                <ListItemText>{
+                                                    // @ts-ignore
+                                                    coin.marketId
+                                                }
+                                                </ListItemText>
+                                            </ListItem>))
+                                    }
+                                </List>
+                            </>
+                        }
+
+
+                    </Paper>
+                </Grid>
+                <Grid item xs={6}>
+                    <Paper className={classes.paper}>xs=6</Paper>
+                </Grid>
+            </Grid>
+        </div>
     </div>;
 };

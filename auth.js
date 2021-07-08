@@ -5,6 +5,13 @@ const auth = {
         } else {
             next();
         }
+    },
+    adminOnly: (req, res, next) => {
+        if (!req.user.roles.includes('admin')) {
+            res.status(403).send({errorMessage: 'Forbiden'});
+        } else {
+            next();
+        }
     }
 };
 

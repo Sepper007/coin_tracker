@@ -16,18 +16,28 @@ const transporter = nodemailer.createTransport({
     }
 });
 
+const encryptionAlgorithm = 'aes-256-ctr';
+
+const decryptPrivateKey = (encryptedKey, input_vector) => {
+    const secretKey = process.env.ENCRYPTION_KEY;
+
+    const decipher = crypto.createDecipheriv(encryptionAlgorithm, secretKey, input_vector);
+
+    const decryptedPrivateKey = Buffer.concat([decipher.update(Buffer.from(encryptedKey, 'hex')), decipher.final()]);
+
+    return decryptedPrivateKey.toString();
+}
+
 const userAuthenticationApi = (app, pool) => {
 
     const createPasswordHash = (password, salt) => {
-        return crypto.pbkdf2Sync(password, salt, 1000, 64, `sha512`).toString(`hex`);
+        return crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
     }
 
 // configure passport.js to use the local strategy
     passport.use(new LocalStrategy(
         {usernameField: 'email'},
         async (email, password, done) => {
-            // here is where you make a call to the database
-
             // Check if given user exists in the database
             const client = await pool.connect();
 
@@ -43,11 +53,7 @@ const userAuthenticationApi = (app, pool) => {
             const calculatedHash = createPasswordHash(password, salt);
 
             if (calculatedHash === hash) {
-                const user = {
-                    id, email, hash
-                };
-
-                return done(null, user);
+                return done(null, {id});
             }
 
             // Return same error message as in the user not found case, so it's not exposed whether a given e-mail
@@ -59,7 +65,7 @@ const userAuthenticationApi = (app, pool) => {
     passport.serializeUser((user, done) => {
         console.log('Seralise')
         done(null, {
-            id: user.id
+            id: user.id,
         });
     });
 
@@ -78,7 +84,28 @@ const userAuthenticationApi = (app, pool) => {
 
             const {id, email} = result.rows[0];
 
-            const userEntry = {id, email};
+            const rolesResult = await client.query('SELECT role_id from roles_user_mapping where user_id = $1', [user.id]);
+
+            const mappedRoles = rolesResult.rows.map(role => role.role_id);
+
+            const accountMappingResult = await client.query('SELECT user_id, platform, platform_user_id, private_key, input_vector, public_key from account_mappings where user_id = $1', [user.id]);
+
+            const mappedAccounts = accountMappingResult.rows.reduce((obj, row) => {
+                obj[row.platform] = {
+                    userId: row.platform_user_id,
+                    privateKey: decryptPrivateKey(row.private_key, row.input_vector),
+                    publicKey: row.public_key
+                };
+
+                return obj;
+            }, {});
+
+            const userEntry = {
+                id,
+                email,
+                roles: mappedRoles,
+                accountMappings: mappedAccounts
+            };
 
             userCache[id] = userEntry;
 
@@ -175,8 +202,6 @@ const userAuthenticationApi = (app, pool) => {
         }
     });
 
-    const encryptionAlgorithm = 'aes-256-ctr';
-
     app.post('/api/:platform/tokens', auth.required, async (req, res) => {
         const {platform} = req.params;
 
@@ -223,16 +248,10 @@ const userAuthenticationApi = (app, pool) => {
             } else {
                 const { user_id, platform, platform_user_id, private_key, public_key, input_vector } = result.rows[0];
 
-                const secretKey = process.env.ENCRYPTION_KEY;
-
-                const decipher = crypto.createDecipheriv(encryptionAlgorithm, secretKey, input_vector);
-
-                const decryptedPrivateKey = Buffer.concat([decipher.update(Buffer.from(private_key, 'hex')), decipher.final()]);
-
                 res.status(200).send({
                     platform,
                     userId: platform_user_id,
-                    private_key: decryptedPrivateKey.toString(),
+                    private_key: decryptPrivateKey(private_key, input_vector),
                     publicKey: public_key
                 });
             }
