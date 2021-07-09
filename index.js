@@ -230,13 +230,13 @@ app.get('/api/:platform/order/:userId/id/:orderId/coin/:coinId', auth.required, 
     }
 });
 
-app.get('/api/:platform/trades/user/:userId/coin/:coinId', auth.required, async (req, res) => {
+app.get('/api/:platform/trades/coin/:coinId', auth.required, async (req, res) => {
     try {
-        const {userId, coinId} = req.params;
+        const {coinId} = req.params;
 
         const platformInstance = getTradingPlatform(req);
 
-        const resp = await platformInstance.getMyTrades(coinId, userId);
+        const resp = await platformInstance.getMyTrades(coinId);
 
         res.send(resp);
     } catch (e) {
@@ -244,13 +244,13 @@ app.get('/api/:platform/trades/user/:userId/coin/:coinId', auth.required, async 
     }
 });
 
-app.get('/api/:platform/trades/user/:userId/coin/:coinId/hours/:hours', auth.required, async (req, res) => {
+app.get('/api/:platform/trades/coin/:coinId/hours/:hours', auth.required, async (req, res) => {
     try {
-        const {userId, coinId, hours} = req.params;
+        const {coinId, hours} = req.params;
 
         const platformInstance = getTradingPlatform(req);
 
-        const {trades, ticker, minutesUp, marketId} = await platformInstance.getMyTrades(coinId, userId, hours);
+        const {trades, ticker, minutesUp, marketId} = await platformInstance.getMyTrades(coinId, hours);
 
         const aggregatedTrades = tradingAnalytics.aggregateMyTrades(coinId, marketId, minutesUp, trades, ticker);
 
@@ -315,7 +315,8 @@ app.get('/api/platform', auth.required, async (req, res) => {
            id: row.id,
            description: row.description,
            active: !!row.currently_active,
-           userCredentialsAvailable: !!req.user.accountMappings[row.id]
+           userCredentialsAvailable: !!req.user.accountMappings[row.id],
+           platformUserId: !!req.user.accountMappings[row.id] ? req.user.accountMappings[row.id].userId : null
        }));
 
        res.send(mappedResp);

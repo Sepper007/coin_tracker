@@ -127,17 +127,11 @@ class NDAXTradingPlatform {
         return await NDAXTradingPlatform.readOnlyInstance.fetchTrades(marketId, null, 200);
     }
 
-    async getMyTrades(coinId, userId, hours = 2, sinceTrackingStart) {
-        const userSpecificNDAXInstance = this.userSpecificInstances[userId];
-
-        if (!userSpecificNDAXInstance) {
-            throw new Error(`User with id ${userId}is not logged in`);
-        }
-
+    async getMyTrades(coinId, hours = 2, sinceTrackingStart) {
         //const since = sinceTrackingStart ? NDAXTradingPlatform.isTracking()[coinId][userId].since : Date.now() - 1000 * 60 * 60 * hours;
         const since = Date.now() - 1000 * 60 * 60 * hours;
 
-        const trades = await userSpecificNDAXInstance.fetchMyTrades(NDAXTradingPlatform.getCoinMarketId(coinId), since);
+        const trades = await this.userSpecificInstance.fetchMyTrades(NDAXTradingPlatform.getCoinMarketId(coinId), since);
 
         const ticker = await this.fetchTicker(coinId);
 

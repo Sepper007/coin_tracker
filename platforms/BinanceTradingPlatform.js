@@ -132,10 +132,10 @@ class BinanceTradingPlatform {
         return await BinanceTradingPlatform.readOnlyInstance.fetchTrades(marketId, Date.now() - (2 * 60 * 1000), 1000);
     }
 
-    async getMyTrades(coinId, userId, hours = 2, sinceTrackingStart) {
+    async getMyTrades(coinId, hours = 2, sinceTrackingStart) {
         // const since = sinceTrackingStart ? BinanceTradingPlatform.isTracking()[coinId][userId].since : Date.now() - 1000 * 60 * 60 * hours;
 
-        const since = Date.now() - 1000 * 60 * 60 * hours;;
+        const since = Date.now() - 1000 * 60 * 60 * hours;
 
         const marketId = BinanceTradingPlatform.getCoinMarketId(coinId);
 

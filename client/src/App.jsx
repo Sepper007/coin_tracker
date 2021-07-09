@@ -1,9 +1,10 @@
 import './App.css';
-import React, {useEffect, useState} from 'react';
+import React, {useEffect} from 'react';
 import Router from "./routing";
 import AppHeader from "./components/AppHeader";
 import axios from "axios";
 import { useStore} from "./store";
+import { MessageToast } from './components/util/MessageToast'
 
 function App() {
 
@@ -29,6 +30,7 @@ function App() {
         <div className="App">
             { isAuthenticated.value && <AppHeader/>}
             <Router/>
+            <MessageToast />
         </div>
     );
 }

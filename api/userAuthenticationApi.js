@@ -212,6 +212,7 @@ const userAuthenticationApi = (app, pool) => {
                 res.status(400).send({errorMessage: 'parameters platform, userId, privateKey and publicKey are mandatory!'});
             }
 
+
             // Cut to 16, just to be sure
             const inputVector = crypto.randomBytes(8).toString('hex').slice(0, 16);
 
@@ -226,6 +227,11 @@ const userAuthenticationApi = (app, pool) => {
             await client.query('Insert into account_mappings (user_id, platform, platform_user_id, private_key, public_key, input_vector) values ($1,$2,$3,$4,$5,$6)',
                 [req.user.id, platform, userId, encryptedPrivateKey.toString('hex'), publicKey, inputVector]);
 
+            // After credentials were saved successfully, invalidate cache for user
+            if (userCache[req.user.id]) {
+                delete userCache[req.user.id];
+            }
+
             res.status(204).send();
 
         } catch (e) {
@@ -234,6 +240,7 @@ const userAuthenticationApi = (app, pool) => {
         }
     });
 
+    /*
     app.get('/api/:platform/tokens', auth.required, async (req, res) => {
         const { platform } = req.params;
 
@@ -260,6 +267,7 @@ const userAuthenticationApi = (app, pool) => {
             res.status(500).send({errorMessage: e.message});
         }
     });
+     */
 
     app.delete('/api/:platform/tokens', auth.required, async (req, res) => {
         const {platform} = req.params;
@@ -269,6 +277,11 @@ const userAuthenticationApi = (app, pool) => {
 
             await client.query('Delete from account_mappings where user_id = $1 and platform = $2', [req.user.id, platform]);
 
+            // After credentials were deleted successfully, invalidate cache for user
+            if (userCache[req.user.id]) {
+                delete userCache[req.user.id];
+            }
+ 
             res.status(204).send();
         } catch (e) {
             console.log(`An error occurred while deleting the tokens for user ${req.user} and platform ${platform}`);
