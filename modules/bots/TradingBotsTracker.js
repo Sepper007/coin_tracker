@@ -1,17 +1,23 @@
 const MarketSpreadBot = require('./MarketSpreadBot');
+const ArbitrageBot = require('./ArbitrageBot');
+const arbitrageOpportunity = require('../arbitrageOpportunity');
 
 class TradingBotsTracker {
     static botTypes = {
-        marketSpread: 'marketSpread'
+        marketSpread: 'marketSpread',
+        arbitrage: 'arbitrage'
     };
 
     constructor() {
         this.activeBots = {};
     }
 
-    startBotForUser(userId, botType, platFormName, coinId, amount, tradingPlatformInstance) {
+    startBotForUser(userId, botType, platFormName, tradingPlatformInstance, parameters) {
+
+        let bot;
+
         switch (botType) {
-            case TradingBotsTracker.botTypes.marketSpread:
+            case TradingBotsTracker.botTypes.marketSpread: {
                 const {
                     getRecentTrades,
                     fetchTicker,
@@ -21,10 +27,11 @@ class TradingBotsTracker {
                     getMinimumQuantity
                 } = tradingPlatformInstance;
 
+                const {coinId, amount} = parameters;
 
-                const bot = new MarketSpreadBot(
+                bot = new MarketSpreadBot(
                     // FIXME: Add actual user-email logic
-                    'sebastian.oberhauser@web.de',
+                    'sebastian_oberhauser@web.de',
                     platFormName,
                     coinId,
                     amount,
@@ -33,54 +40,73 @@ class TradingBotsTracker {
                     fetchTicker.bind(tradingPlatformInstance),
                     // Encapsulate all user-id specific methods here, so the bot instance doesn't have to know the user-id
                     // !!!! IMPORTANT: don't use arrow-functions here, as you can't manually override the this context !!!!
-                    (...params) => fetchOrder.bind(tradingPlatformInstance)(userId, ...params),
-                    (...params) => createOrder.bind(tradingPlatformInstance)(userId, ...params),
-                    (...params) => editOrder.bind(tradingPlatformInstance)(userId, ...params),
+                    (...params) => fetchOrder.bind(tradingPlatformInstance)(...params),
+                    (...params) => createOrder.bind(tradingPlatformInstance)(...params),
+                    (...params) => editOrder.bind(tradingPlatformInstance)(...params),
                     (...params) => getMinimumQuantity.bind(tradingPlatformInstance)(...params)
                 );
+                break;
+            }
+            case TradingBotsTracker.botTypes.arbitrage: {
+                const {amount, tradingPairs, comparePair, checkInterval} = parameters;
 
-                if (this.activeBots[userId] && this.activeBots[userId][platFormName] && this.activeBots[userId][platFormName][botType] && this.activeBots[userId][platFormName][botType][coinId]) {
-                    if (this.activeBots[userId][platFormName][botType].running || this.activeBots[userId][platFormName][botType].softShutdown) {
-                        // There is already a bot running for the user, stop the existing one
-                        console.log(`There is already a bot running for user ${userId}, platform ${platFormName}, type ${botType} and coin ${coinId}, stopping existing bot`);
-                        this.activeBots[userId][platFormName][botType][coinId].instance.stop();
-                    }
-                }
-
-                this.activeBots[userId] = {
-                    ...this.activeBots[userId],
-                    [platFormName]: {
-                        ...this.activeBots[userId] && this.activeBots[userId][platFormName],
-                        [botType]: {
-                            ...this.activeBots[userId] && this.activeBots[userId][platFormName] && this.activeBots[userId][platFormName][botType],
-                            [coinId]: {
-                                running: true,
-                                softShutdown: false,
-                                instance: bot
-                            }
-                        }
-                    }
-                };
+                bot = new ArbitrageBot(
+                    // FIXME: Add actual user-email logic
+                    'sebastian_oberhauser@web.de',
+                    platFormName,
+                    tradingPlatformInstance,
+                    amount,
+                    arbitrageOpportunity.checkOpportunity,
+                    tradingPairs,
+                    comparePair,
+                    checkInterval
+                );
 
                 break;
+            }
             default:
                 throw new Error(`Bot Type ${botType} is not supported`);
         }
-    }
 
-    stopBotForUser(userId, botType, platFormName, coinId, soft = false) {
-        // Check if bot exists and is currently running
-        if (!(this.activeBots[userId] && this.activeBots[userId][platFormName] && this.activeBots[userId][platFormName][botType] && this.activeBots[userId][platFormName][botType][coinId]
-            && this.activeBots[userId][platFormName][botType][coinId].running
-        )) {
-            throw new Error(`There is no bot running for user ${userId}, platform ${platFormName} and type ${botType}`);
+        bot.run();
+
+        const id = bot.getId();
+
+
+        if (this.activeBots[id]) {
+            // There is already a bot running for the user, stop the existing one
+            console.log(`There is already a bot running with the given parameters, stopping existing bot`);
+            this.activeBots[id].instance.stop();
         }
 
-        this.activeBots[userId][platFormName][botType][coinId].instance.stop(soft);
+        this.activeBots[id] = {running: true, softShutdown: false, instance: bot};
+    }
 
-        delete this.activeBots[userId][platFormName][botType][coinId];
+    stopBotForUser(botType, parameters) {
+        let id;
 
-        console.log(`Bot with type ${botType}, coin ${coinId} for platform ${platFormName} was stopped for user ${userId} `);
+        switch (botType) {
+            case TradingBotsTracker.botTypes.marketSpread: {
+                const {platformName, userEmail, coinId} = parameters;
+
+                id = MarketSpreadBot.generateId(platformName, userEmail, coinId);
+
+                break;
+            }
+            case TradingBotsTracker.botTypes.arbitrage: {
+                const {platformName, userEmail, tradingPairs, comparePair} = parameters;
+
+                id = ArbitrageBot.generateId(platformName, userEmail, tradingPairs, comparePair);
+
+                break;
+            }
+            default:
+                throw new Error(`Bot Type ${botType} is not supported`);
+        }
+
+        this.activeBots[id].instance.stop();
+
+        delete this.activeBots[id];
     }
 }
 

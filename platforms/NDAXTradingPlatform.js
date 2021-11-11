@@ -24,11 +24,26 @@ class NDAXTradingPlatform {
             marketId: 'ADA/CAD',
             metaId: 'ADA',
             minimumQuantity: 0.1
+        },
+        btc_cad: {
+            marketId: 'BTC/CAD',
+            metaId: 'BTC',
+            minimumQuantity: 0.0001
+        },
+        btc_usdt: {
+            marketId: 'BTC/USDT',
+            metaId: 'BTC',
+            minimumQuantity: 0.0001
+        },
+        usdt_cad: {
+            marketId: 'USDT/CAD',
+            metaId: 'BTC',
+            minimumQuantity: 10
         }
     };
 
     constructor(params) {
-        login(params);
+        this.login(params);
     }
 
     static getCoinMetaId(coinId) {
@@ -79,8 +94,12 @@ class NDAXTradingPlatform {
         await this.userSpecificInstance.cancelAllOrders();
     }
 
-    async createOrder(userId, coinId, price, amount, action = 'sell', type = 'limit') {
+    async createOrder(coinId, price, amount, action = 'sell', type = 'limit') {
         return await this.userSpecificInstance.createOrder(NDAXTradingPlatform.getCoinMarketId(coinId), type, action, amount, price);
+    }
+
+    async getBalance() {
+        return await this.userSpecificInstance.fetchBalance();
     }
 
     async editOrder(coinId, orderId, price, amount, action = 'sell', type = 'limit') {
@@ -131,13 +150,15 @@ class NDAXTradingPlatform {
         //const since = sinceTrackingStart ? NDAXTradingPlatform.isTracking()[coinId][userId].since : Date.now() - 1000 * 60 * 60 * hours;
         const since = Date.now() - 1000 * 60 * 60 * hours;
 
-        const trades = await this.userSpecificInstance.fetchMyTrades(NDAXTradingPlatform.getCoinMarketId(coinId), since);
+        const marketId = NDAXTradingPlatform.getCoinMarketId(coinId);
+
+        const trades = await this.userSpecificInstance.fetchMyTrades(marketId, since);
 
         const ticker = await this.fetchTicker(coinId);
 
         const minutesUp = (Date.now() - since) / (60 * 1000);
 
-        return { trades, ticker, minutesUp };
+        return { trades, ticker, minutesUp, marketId };
     }
 }
 

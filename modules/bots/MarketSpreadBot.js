@@ -22,6 +22,14 @@ class MarketSpreadBot extends TradingBot {
         this.run();
     }
 
+    getId() {
+        return MarketSpreadBot.generateId(this.platformName, this.userEmail, this.coinId);
+    }
+
+    static generateId(platformName, userEmail, coinId) {
+        return `MARKET_SPREAD_${platformName}_${userEmail}_${coinId}`;
+    }
+
     async run() {
         while (this.isRunning) {
             await utils.timeout(1 * 1000);
@@ -289,7 +297,7 @@ class MarketSpreadBot extends TradingBot {
                 this.openOrder = {
                     coinId: this.coinId,
                     amount: this.amount,
-                    orderId: order.id,
+                    orderId: Number.parseInt(order.id),
                     price: buyPrice,
                     type: 'buy'
                 };

@@ -2,6 +2,8 @@ const express = require('express');
 const path = require('path');
 const {Pool} = require('pg');
 const auth = require('./auth');
+const utils = require('./modules/utils');
+
 
 const userAuthenticationApi = require('./api/userAuthenticationApi');
 
@@ -29,7 +31,7 @@ const tradingPlatforms = require('./utils/supportedTradingPlatforms');
 const userPlatformInstanceCache = {};
 
 const getTradingPlatform = (req) => {
-    const { platform } = req.params;
+    const {platform} = req.params;
 
     if (!tradingPlatforms[platform]) {
         throw new Error(`Platform ${platform} is not supported, the supported values are: ${Object.keys(tradingPlatforms).join(',')}`);
@@ -65,36 +67,101 @@ const getTradingPlatform = (req) => {
 const coinTracker = require('./coinTracker');
 
 const tradingAnalytics = require('./modules/tradingAnalytics');
+const arbitrageOpportunity = require('./modules/arbitrageOpportunity');
 
 const TradingBotsTracker = require('./modules/bots/TradingBotsTracker');
 
 const tradingBotsTracker = new TradingBotsTracker();
 
-app.post('/api/:platform/startMarketSpreadBot/coin/:coinId/user/:userId/amount/:amount', auth.required, (req, res) => {
-    const {coinId, userId, amount, platform} = req.params;
+app.post('/api/:platform/startMarketSpreadBot/coin/:coinId/amount/:amount', auth.required, (req, res) => {
+    const {coinId, amount, platform} = req.params;
+
+    const userId = req.user.id;
 
     const platformInstance = getTradingPlatform(req);
 
-    tradingBotsTracker.startBotForUser(userId, TradingBotsTracker.botTypes.marketSpread, platform, coinId, amount, platformInstance);
+    tradingBotsTracker.startBotForUser(userId, TradingBotsTracker.botTypes.marketSpread, platform, platformInstance, {
+        coinId,
+        amount
+    });
 
     res.send('{}', 204);
 });
 
-app.post('/api/:platform/stopMarketSpreadBot/coin/:coinId/user/:userId', (req, res) => {
-    const {coinId, userId, platform} = req.params;
+app.post('/api/:platform/stopMarketSpreadBot/coin/:coinId', (req, res) => {
+    const {coinId, platform} = req.params;
+
+    const userId = req.user.id;
 
     const soft = req.query.soft || false;
 
-    tradingBotsTracker.stopBotForUser(userId, TradingBotsTracker.botTypes.marketSpread, platform, coinId, soft);
+    tradingBotsTracker.stopBotForUser(userId, TradingBotsTracker.botTypes.marketSpread, platform, {coinId}, soft);
 
     res.send('{}', 204);
 });
 
-
-
-app.get('/api/:platform/meta', auth.required, async(req, res) => {
+app.post('/api/:platform/startArbitrageBot', auth.required, (req, res) => {
     try {
-        const { platform } = req.params;
+        const {tradingPairs, comparePair, checkInterval = 30, amount} = req.body;
+
+        const {platform} = req.params;
+
+        const userId = req.user.id;
+
+        if (!tradingPairs || !Array.isArray(tradingPairs)) {
+            throw new Error('tradingPairs is a required paramater and must be an Array');
+        }
+
+        if (!comparePair) {
+            throw new Error('comparePair is a required value');
+        }
+
+        if (!amount) {
+            throw new Error('amount is a required value');
+        }
+
+        const platformInstance = getTradingPlatform(req);
+
+        tradingBotsTracker.startBotForUser(userId, TradingBotsTracker.botTypes.arbitrage, platform, platformInstance, {
+            tradingPairs,
+            comparePair,
+            checkInterval,
+            amount
+        });
+
+        res.send('{}', 204);
+    } catch (e) {
+        res.status(500).send(JSON.stringify(e, Object.getOwnPropertyNames(e)));
+    }
+});
+
+app.post('/api/:platform/stopArbitrageBot/coin/:coinId', (req, res) => {
+    try {
+        const {tradingPairs, comparePair, checkInterval = 30, amount} = req.body;
+
+        const {platform} = req.params;
+
+        const userId = req.user.id;
+
+        const soft = req.query.soft || false;
+
+        tradingBotsTracker.stopBotForUser(userId, TradingBotsTracker.botTypes.arbitrage, platform, {
+            tradingPairs,
+            comparePair,
+            checkInterval,
+            amount
+        }, soft);
+
+        res.send('{}', 204);
+    } catch (e) {
+        res.status(500).send(e.message);
+    }
+});
+
+
+app.get('/api/:platform/meta', auth.required, async (req, res) => {
+    try {
+        const {platform} = req.params;
 
         res.send({
             supportedCoins: tradingPlatforms[platform].supportedCoins
@@ -102,7 +169,18 @@ app.get('/api/:platform/meta', auth.required, async(req, res) => {
     } catch (e) {
         res.status(500).send(e.message);
     }
+});
 
+app.get('/api/:platform/balance', auth.required, async (req, res) => {
+    try {
+        const platformInstance = getTradingPlatform(req);
+
+        const balance = await platformInstance.getBalance();
+
+        res.send(balance);
+    } catch (e) {
+        res.status(500).send(e.message);
+    }
 });
 
 app.get('/api/:platform/meta/:coinId', auth.required, async (req, res) => {
@@ -131,7 +209,7 @@ app.get('/api/:platform/meta', auth.required, async (req, res) => {
 
 app.get('/api/:platform/meta/user/:userId', auth.required, async (req, res) => {
     try {
-        const { userId } = req.params;
+        const {userId} = req.params;
 
         const platformInstance = getTradingPlatform(req);
 
@@ -186,29 +264,25 @@ app.post('/api/:platform/add-user-info', auth.required, async (req, res) => {
     }
 });
 
-app.post('/api/:platform/cancelAllOrders/:userId', auth.required, async (req, res) => {
+app.post('/api/:platform/cancelAllOrders', auth.required, async (req, res) => {
     try {
-        const {userId} = req.params;
-
         const platformInstance = getTradingPlatform(req);
 
-        await platformInstance.cancelAllOrders(userId);
+        const result = await platformInstance.cancelAllOrders();
 
-        res.send({}, 204);
+        res.send({result});
     } catch (e) {
         res.send(e.message, 500);
     }
 });
 
-app.post('/api/:platform/order/:userId', auth.required, async (req, res) => {
+app.post('/api/:platform/order', auth.required, async (req, res) => {
     try {
-        const {userId} = req.params;
-
         const platformInstance = getTradingPlatform(req);
 
         const {coinId, price, amount, action = 'sell', type = 'limit'} = req.body;
 
-        const resp = await platformInstance.createOrder(userId, coinId, price, amount, action, type);
+        const resp = await platformInstance.createOrder(coinId, price, amount, action, type);
 
         res.send(resp);
     } catch (e) {
@@ -216,13 +290,121 @@ app.post('/api/:platform/order/:userId', auth.required, async (req, res) => {
     }
 });
 
-app.get('/api/:platform/order/:userId/id/:orderId/coin/:coinId', auth.required, async (req, res) => {
+
+app.post('/api/:platform/opportunity/realise', auth.required, async (req, res) => {
     try {
-        const {userId, orderId, coinId} = req.params;
+        const platformInstance = getTradingPlatform(req);
+
+        const {tradingPairs, comparePair, checkInterval = 30, amount} = req.body;
+
+        if (!tradingPairs || !Array.isArray(tradingPairs)) {
+            throw new Error('tradingPairs is a required paramater and must be an Array');
+        }
+
+        if (!comparePair) {
+            throw new Error('comparePair is a required value');
+        }
+
+        if (!amount) {
+            throw new Error('amount is a required value');
+        }
+
+        const fn = async () => {
+            console.log('Start tracking');
+
+            while (true) {
+                const currentOpp = await checkOpportunity(platformInstance, tradingPairs, comparePair);
+
+                // We only react to opportunities with at least 1% margin
+
+                // If the opportunity is higher, buy from the simple pair and sell the circular pairs
+                if (currentOpp.positiveOpp - 1 > 0.01) {
+                    console.log('Positive Opportunity found:');
+                    console.log(currentOpp);
+
+                    try {
+
+                        tradingPairs.forEach(async ({id}) => {
+                            const calcValue = amount * (currentOpp.comparePair.ask / currentOpp.currentTickers[id].bid);
+
+                            console.log(`Selling ${calcValue} of coin ${id}`);
+
+                            await platformInstance.createOrder(id, 0, calcValue, 'sell', 'market');
+                        });
+
+                        console.log(`Buying ${amount} of coin ${comparePair}`);
+
+                        platformInstance.createOrder(comparePair, 0, amount, 'buy', 'market')
+
+                    } catch (e) {
+                        console.log(e);
+                        throw e;
+                    }
+
+                    // Opposite opportunity, buy from the circular pairs and sell the simple pair
+                } else if (currentOpp.negativeOpp - 1 > 0.01) {
+                    console.log('Negative Opportunity found:');
+                    console.log(currentOpp);
+
+                    try {
+                        tradingPairs.forEach(async ({id}) => {
+                            const calcValue = amount * (currentOpp.comparePair.bid / currentOpp.currentTickers[id].ask);
+
+                            console.log(`Selling ${calcValue} of coin ${id}`);
+
+                            platformInstance.createOrder(id, 0, calcValue, 'buy', 'market')
+                        });
+
+                        console.log(`Buying ${amount} of coin ${comparePair}`);
+
+                        platformInstance.createOrder(comparePair, 0, amount, 'sell', 'market')
+
+                    } catch (e) {
+                        console.log(e);
+                        throw e;
+                    }
+                }
+
+                await utils.timeout(1000 * checkInterval);
+            }
+        };
+
+        fn();
+
+        res.send('{}', 204);
+    } catch (e) {
+        res.send(e);
+    }
+});
+
+app.post('/api/:platform/opportunity', auth.required, async (req, res) => {
+    try {
+        const platformInstance = getTradingPlatform(req);
+
+        const {tradingPairs, comparePair} = req.body;
+
+        if (!tradingPairs || !Array.isArray(tradingPairs)) {
+            throw new Error('tradingPairs is a required paramater and must be an Array');
+        }
+
+        if (!comparePair) {
+            throw new Error('comparePair is a required value');
+        }
+
+        res.send(await arbitrageOpportunity.checkOpportunity(platformInstance, tradingPairs, comparePair));
+
+    } catch (e) {
+        res.send(e.message, 500);
+    }
+});
+
+app.get('/api/:platform/order/id/:orderId/coin/:coinId', auth.required, async (req, res) => {
+    try {
+        const {orderId, coinId} = req.params;
 
         const platformInstance = getTradingPlatform(req);
 
-        const resp = await platformInstance.fetchOrder(userId, orderId, coinId);
+        const resp = await platformInstance.fetchOrder(orderId, coinId);
 
         res.send(resp);
     } catch (e) {
@@ -276,7 +458,7 @@ app.get('/api/:platform/trades/user/:userId/coin/:coinId/since-tracking-start', 
 
 app.post('/api/platform', auth.required, auth.adminOnly, async (req, res) => {
     try {
-        const { name, id } = req.body;
+        const {name, id} = req.body;
 
         if (!name || !id) {
             res.status(400).send('Id and name are required paramters');
@@ -295,7 +477,7 @@ app.post('/api/platform', auth.required, auth.adminOnly, async (req, res) => {
 
 app.post('/api/platform/:id/active/:active', auth.required, auth.adminOnly, async (req, res) => {
     try {
-        const { id, active } = req.param;
+        const {id, active} = req.param;
 
         await client.query('Update platforms set active = $1 where id = $2', [active, id]);
 
@@ -306,23 +488,23 @@ app.post('/api/platform/:id/active/:active', auth.required, auth.adminOnly, asyn
 });
 
 app.get('/api/platform', auth.required, async (req, res) => {
-   try {
-       const client = await pool.connect();
+    try {
+        const client = await pool.connect();
 
-       const result = await client.query('SELECT id, description, currently_active FROM platforms');
+        const result = await client.query('SELECT id, description, currently_active FROM platforms');
 
-       const mappedResp = result.rows.map(row => ({
-           id: row.id,
-           description: row.description,
-           active: !!row.currently_active,
-           userCredentialsAvailable: !!req.user.accountMappings[row.id],
-           platformUserId: !!req.user.accountMappings[row.id] ? req.user.accountMappings[row.id].userId : null
-       }));
+        const mappedResp = result.rows.map(row => ({
+            id: row.id,
+            description: row.description,
+            active: !!row.currently_active,
+            userCredentialsAvailable: !!req.user.accountMappings[row.id],
+            platformUserId: !!req.user.accountMappings[row.id] ? req.user.accountMappings[row.id].userId : null
+        }));
 
-       res.send(mappedResp);
-   } catch (e) {
-       res.send(e.message, 500);
-   }
+        res.send(mappedResp);
+    } catch (e) {
+        res.send(e.message, 500);
+    }
 });
 
 app.get('/api/test/db', async (req, res) => {
@@ -349,7 +531,7 @@ app.get('/api/test/db', async (req, res) => {
 // The "catchall" handler: for any request that doesn't
 // match one above, send back React's index.html file.
 app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname+'/client/public/index.html'));
+    res.sendFile(path.join(__dirname + '/client/public/index.html'));
 });
 
 

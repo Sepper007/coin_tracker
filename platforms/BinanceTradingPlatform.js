@@ -29,6 +29,21 @@ class BinanceTradingPlatform {
             marketId: 'HARD/USDT',
             metaId: 'HARD',
             minimumQuantity: 10
+        },
+        eth_btc: {
+            marketId: 'ETH/BTC',
+            metaId: 'BTC',
+            minimumQuantity: 0.001
+        },
+        eth_usdt: {
+            marketId: 'ETH/USDT',
+            metaId: 'ETC',
+            minimumQuantity: 0.0001
+        },
+        btc_usdt: {
+            marketId: 'BTC/USDT',
+            meta: 'BTC',
+            minimumQuantity: 0.0001
         }
     };
 
@@ -88,11 +103,11 @@ class BinanceTradingPlatform {
         return await this.userSpecificInstance.createOrder(BinanceTradingPlatform.getCoinMarketId(coinId), type, action, amount, price);
     }
 
-    async editOrder(userId, coinId, orderId, price, amount, action = 'sell', type = 'limit') {
+    async editOrder(coinId, orderId, price, amount, action = 'sell', type = 'limit') {
         return await this.userSpecificInstance.editOrder(orderId, BinanceTradingPlatform.getCoinMarketId(coinId), type, action, amount, price);
     }
 
-    async fetchOrder(userId, orderId, coinId) {
+    async fetchOrder(orderId, coinId) {
         return await this.userSpecificInstance.fetchOrder(orderId, BinanceTradingPlatform.getCoinMarketId(coinId));
     }
 

@@ -8,6 +8,10 @@ class TradingBot {
         this.isRunning = false;
         this.softShutdown = softShutdown || false;
     }
+
+    getId() {
+        throw new Error('The get Id method has to be overridden by the specific trading bot implementation!');
+    }
 }
 
 module.exports = TradingBot;
