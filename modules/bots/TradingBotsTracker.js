@@ -12,7 +12,7 @@ class TradingBotsTracker {
         this.activeBots = {};
     }
 
-    startBotForUser(userId, botType, platFormName, tradingPlatformInstance, parameters) {
+    startBotForUser(userEmail, botType, platFormName, tradingPlatformInstance, parameters) {
 
         let bot;
 
@@ -30,8 +30,7 @@ class TradingBotsTracker {
                 const {coinId, amount} = parameters;
 
                 bot = new MarketSpreadBot(
-                    // FIXME: Add actual user-email logic
-                    'sebastian_oberhauser@web.de',
+                    userEmail,
                     platFormName,
                     coinId,
                     amount,
@@ -51,8 +50,7 @@ class TradingBotsTracker {
                 const {amount, tradingPairs, comparePair, checkInterval} = parameters;
 
                 bot = new ArbitrageBot(
-                    // FIXME: Add actual user-email logic
-                    'sebastian_oberhauser@web.de',
+                    userEmail,
                     platFormName,
                     tradingPlatformInstance,
                     amount,
@@ -82,19 +80,19 @@ class TradingBotsTracker {
         this.activeBots[id] = {running: true, softShutdown: false, instance: bot};
     }
 
-    stopBotForUser(botType, parameters) {
+    stopBotForUser(userEmail, botType, platformName, parameters, soft) {
         let id;
 
         switch (botType) {
             case TradingBotsTracker.botTypes.marketSpread: {
-                const {platformName, userEmail, coinId} = parameters;
+                const {coinId} = parameters;
 
                 id = MarketSpreadBot.generateId(platformName, userEmail, coinId);
 
                 break;
             }
             case TradingBotsTracker.botTypes.arbitrage: {
-                const {platformName, userEmail, tradingPairs, comparePair} = parameters;
+                const {userEmail, tradingPairs, comparePair} = parameters;
 
                 id = ArbitrageBot.generateId(platformName, userEmail, tradingPairs, comparePair);
 
@@ -104,9 +102,11 @@ class TradingBotsTracker {
                 throw new Error(`Bot Type ${botType} is not supported`);
         }
 
-        this.activeBots[id].instance.stop();
+        if (this.activeBots[id]) {
+            this.activeBots[id].instance.stop(soft);
 
-        delete this.activeBots[id];
+            delete this.activeBots[id];
+        }
     }
 }
 

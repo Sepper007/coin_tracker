@@ -76,11 +76,11 @@ const tradingBotsTracker = new TradingBotsTracker();
 app.post('/api/:platform/startMarketSpreadBot/coin/:coinId/amount/:amount', auth.required, (req, res) => {
     const {coinId, amount, platform} = req.params;
 
-    const userId = req.user.id;
+    const {email} = req.user;
 
     const platformInstance = getTradingPlatform(req);
 
-    tradingBotsTracker.startBotForUser(userId, TradingBotsTracker.botTypes.marketSpread, platform, platformInstance, {
+    tradingBotsTracker.startBotForUser(email, TradingBotsTracker.botTypes.marketSpread, platform, platformInstance, {
         coinId,
         amount
     });
@@ -91,11 +91,11 @@ app.post('/api/:platform/startMarketSpreadBot/coin/:coinId/amount/:amount', auth
 app.post('/api/:platform/stopMarketSpreadBot/coin/:coinId', (req, res) => {
     const {coinId, platform} = req.params;
 
-    const userId = req.user.id;
+    const {email} = req.user;
 
     const soft = req.query.soft || false;
 
-    tradingBotsTracker.stopBotForUser(userId, TradingBotsTracker.botTypes.marketSpread, platform, {coinId}, soft);
+    tradingBotsTracker.stopBotForUser(email, TradingBotsTracker.botTypes.marketSpread, platform, {coinId}, soft);
 
     res.send('{}', 204);
 });
@@ -106,7 +106,7 @@ app.post('/api/:platform/startArbitrageBot', auth.required, (req, res) => {
 
         const {platform} = req.params;
 
-        const userId = req.user.id;
+        const {email} = req.user;
 
         if (!tradingPairs || !Array.isArray(tradingPairs)) {
             throw new Error('tradingPairs is a required paramater and must be an Array');
@@ -122,7 +122,7 @@ app.post('/api/:platform/startArbitrageBot', auth.required, (req, res) => {
 
         const platformInstance = getTradingPlatform(req);
 
-        tradingBotsTracker.startBotForUser(userId, TradingBotsTracker.botTypes.arbitrage, platform, platformInstance, {
+        tradingBotsTracker.startBotForUser(email, TradingBotsTracker.botTypes.arbitrage, platform, platformInstance, {
             tradingPairs,
             comparePair,
             checkInterval,
@@ -135,17 +135,17 @@ app.post('/api/:platform/startArbitrageBot', auth.required, (req, res) => {
     }
 });
 
-app.post('/api/:platform/stopArbitrageBot/coin/:coinId', (req, res) => {
+app.post('/api/:platform/stopArbitrageBot', (req, res) => {
     try {
         const {tradingPairs, comparePair, checkInterval = 30, amount} = req.body;
 
         const {platform} = req.params;
 
-        const userId = req.user.id;
+        const {email} = req.user;
 
         const soft = req.query.soft || false;
 
-        tradingBotsTracker.stopBotForUser(userId, TradingBotsTracker.botTypes.arbitrage, platform, {
+        tradingBotsTracker.stopBotForUser(email, TradingBotsTracker.botTypes.arbitrage, platform,{
             tradingPairs,
             comparePair,
             checkInterval,
