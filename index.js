@@ -88,7 +88,7 @@ app.post('/api/:platform/startMarketSpreadBot/coin/:coinId/amount/:amount', auth
     res.send('{}', 204);
 });
 
-app.post('/api/:platform/stopMarketSpreadBot/coin/:coinId', (req, res) => {
+app.post('/api/:platform/stopMarketSpreadBot/coin/:coinId', auth.required, (req, res) => {
     const {coinId, platform} = req.params;
 
     const {email} = req.user;
@@ -135,7 +135,7 @@ app.post('/api/:platform/startArbitrageBot', auth.required, (req, res) => {
     }
 });
 
-app.post('/api/:platform/stopArbitrageBot', (req, res) => {
+app.post('/api/:platform/stopArbitrageBot', auth.required, (req, res) => {
     try {
         const {tradingPairs, comparePair, checkInterval = 30, amount} = req.body;
 
