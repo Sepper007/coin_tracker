@@ -1,4 +1,5 @@
 import React from 'react';
+// @ts-ignore
 import { createPortal } from 'react-dom';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
