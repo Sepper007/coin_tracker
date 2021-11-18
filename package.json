@@ -23,6 +23,10 @@
       "sessions/*.json"
     ]
   },
+  "engines": {
+    "npm": "6.12.1",
+    "node": "12.13.1"
+  },
   "scripts": {
     "start": "nodemon --inspect index.js",
     "heroku-postbuild": "cd client && npm install && npm run-script build",
