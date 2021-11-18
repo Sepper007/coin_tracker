@@ -25,7 +25,7 @@
   },
   "scripts": {
     "start": "nodemon --inspect index.js",
-    "heroku-postbuild": "cd client && npm run-script build",
+    "heroku-postbuild": "cd client && npm install && npm run-script build",
     "debug": "nodemon --inspect index.js"
   }
 }
