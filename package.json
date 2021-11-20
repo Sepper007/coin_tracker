@@ -28,7 +28,7 @@
     "node": "12.13.1"
   },
   "scripts": {
-    "start": "nodemon --inspect index.js",
+    "start": "node index.js",
     "heroku-postbuild": "cd client && npm install && npm run-script build",
     "debug": "nodemon --inspect index.js"
   }
