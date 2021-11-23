@@ -64,7 +64,6 @@ const getTradingPlatform = (req) => {
 };
 
 // Load different modules
-const coinTracker = require('./coinTracker');
 
 const tradingAnalytics = require('./modules/tradingAnalytics');
 const arbitrageOpportunity = require('./modules/arbitrageOpportunity');

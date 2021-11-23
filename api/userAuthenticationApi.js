@@ -34,14 +34,14 @@ const userAuthenticationApi = (app, pool) => {
         return crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
     }
 
-// configure passport.js to use the local strategy
+    // configure passport.js to use the local strategy
     passport.use(new LocalStrategy(
         {usernameField: 'email'},
         async (email, password, done) => {
             // Check if given user exists in the database
             const client = await pool.connect();
 
-            const result = await client.query('SELECT id, email, hash, salt FROM users where email = $1', [email]);
+            const result = await client.query('SELECT id, email, hash, salt FROM users where email = $1', [email.toLowerCase()]);
 
             if (!result.rows || !result.rows.length) {
                 return done('User not found or invalid password', false, {message: 'User not found or invalid password'});
@@ -124,7 +124,11 @@ const userAuthenticationApi = (app, pool) => {
         store: new FileStore(),
         secret: process.env.SESSION_SIGN_SECRET,
         resave: false,
-        saveUninitialized: true
+        saveUninitialized: true,
+        cookie: {
+            // Session is valid for 24 hours after the last request was made
+            maxAge: 24 * 60 * 60 * 1000
+        }
     }));
 
     app.use(passport.initialize());
@@ -137,7 +141,7 @@ const userAuthenticationApi = (app, pool) => {
             res.status(400).send({errorMessage: 'email or password is invalid'});
         } else {
             try {
-                await createNewUser(email, password);
+                await createNewUser(email.toLowerCase(), password);
 
                 res.status(204).send();
             } catch (e) {
@@ -239,35 +243,6 @@ const userAuthenticationApi = (app, pool) => {
             res.status(500).send({errorMessage: e.message});
         }
     });
-
-    /*
-    app.get('/api/:platform/tokens', auth.required, async (req, res) => {
-        const { platform } = req.params;
-
-        try {
-            const client = await pool.connect();
-
-            const result =await client.query('Select user_id, platform, platform_user_id, private_key, public_key, input_vector from account_mappings ' +
-                'where user_id = $1 and platform = $2', [req.user.id, platform]);
-
-            if (!result.rows.length) {
-                res.status(500).send({errorMessage: `No mapping currently exists for user ${req.user.id} and platform ${platform}`});
-            } else {
-                const { user_id, platform, platform_user_id, private_key, public_key, input_vector } = result.rows[0];
-
-                res.status(200).send({
-                    platform,
-                    userId: platform_user_id,
-                    private_key: decryptPrivateKey(private_key, input_vector),
-                    publicKey: public_key
-                });
-            }
-        } catch (e) {
-            console.log(`An error occurred while retrieving the tokens for user ${req.user} and platform ${platform}`);
-            res.status(500).send({errorMessage: e.message});
-        }
-    });
-     */
 
     app.delete('/api/:platform/tokens', auth.required, async (req, res) => {
         const {platform} = req.params;

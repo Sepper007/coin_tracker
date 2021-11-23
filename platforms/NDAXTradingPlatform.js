@@ -76,7 +76,7 @@ class NDAXTradingPlatform {
         return mappedCoin.minimumQuantity;
     }
 
-    async login(params) {
+    login(params) {
         const {apiKey, secret, uid} = params;
 
         if (!apiKey || !secret || !uid) {
@@ -99,7 +99,20 @@ class NDAXTradingPlatform {
     }
 
     async getBalance() {
-        return await this.userSpecificInstance.fetchBalance();
+        const { info } = await this.userSpecificInstance.fetchBalance();
+
+        return info.filter(({ProductId}) => ProductId)
+            .filter(({Amount}) => Amount > 0)
+            .map(data => ({
+                symbol: data.ProductSymbol,
+                amount: data.Amount,
+                notionalValue: data.NotionalValue,
+                notionalCurrency: data.NotionalProductSymbol,
+                rate: data.NotionalRate
+                })
+            )
+            // Sort entries in descending order
+            .sort((first, second) => second.notionalValue - first.notionalValue);
     }
 
     async editOrder(coinId, orderId, price, amount, action = 'sell', type = 'limit') {
