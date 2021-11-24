@@ -101,7 +101,7 @@ class NDAXTradingPlatform {
     async getBalance() {
         const { info } = await this.userSpecificInstance.fetchBalance();
 
-        return info.filter(({ProductId}) => ProductId)
+        const entries = info.filter(({ProductId}) => ProductId)
             .filter(({Amount}) => Amount > 0)
             .map(data => ({
                 symbol: data.ProductSymbol,
@@ -113,6 +113,17 @@ class NDAXTradingPlatform {
             )
             // Sort entries in descending order
             .sort((first, second) => second.notionalValue - first.notionalValue);
+
+        const totalValue = entries.map(({notionalValue}) => notionalValue).reduce((sum, val) => sum + parseFloat(val), 0);
+
+        return {
+            total: {
+                value: totalValue,
+                // For now we assume that all entries that are returned use the same fiat currency
+                currency: entries[0].notionalCurrency
+            },
+            holdings: entries
+        }
     }
 
     async editOrder(coinId, orderId, price, amount, action = 'sell', type = 'limit') {
