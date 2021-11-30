@@ -411,7 +411,7 @@ app.get('/api/:platform/order/id/:orderId/coin/:coinId', auth.required, async (r
     }
 });
 
-app.get('/api/:platform/trades/coin/:coinId', auth.required, async (req, res) => {
+app.get('/api/:platform/my-trades/coin/:coinId', auth.required, async (req, res) => {
     try {
         const {coinId} = req.params;
 
@@ -425,7 +425,7 @@ app.get('/api/:platform/trades/coin/:coinId', auth.required, async (req, res) =>
     }
 });
 
-app.get('/api/:platform/trades/coin/:coinId/hours/:hours', auth.required, async (req, res) => {
+app.get('/api/:platform/my-trades/coin/:coinId/hours/:hours', auth.required, async (req, res) => {
     try {
         const {coinId, hours} = req.params;
 
@@ -439,6 +439,20 @@ app.get('/api/:platform/trades/coin/:coinId/hours/:hours', auth.required, async 
     } catch (e) {
         res.send(e.message, 500);
     }
+});
+
+const past5YearsInHours  = 5 * 365 * 24;
+
+app.get('/api/:platform/my-trades', auth.required, async(req, res) => {
+   try {
+       const { top = 10, since = past5YearsInHours } = req.query;
+
+       const platformInstance = getTradingPlatform(req);
+
+       res.send(await platformInstance.getMyTrades(undefined, since, top));
+   } catch (e) {
+       res.send(e.message, 500);
+   }
 });
 
 app.get('/api/:platform/trades/user/:userId/coin/:coinId/since-tracking-start', auth.required, async (req, res) => {

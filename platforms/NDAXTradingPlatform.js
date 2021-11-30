@@ -1,4 +1,5 @@
 const ccxt = require('ccxt/ccxt');
+const Utils = require('./utils');
 
 class NDAXTradingPlatform {
 
@@ -41,6 +42,8 @@ class NDAXTradingPlatform {
             minimumQuantity: 10
         }
     };
+
+    static defaultConversionCurrency = "CAD";
 
     constructor(params) {
         this.login(params);
@@ -122,7 +125,8 @@ class NDAXTradingPlatform {
                 // For now we assume that all entries that are returned use the same fiat currency
                 currency: entries[0].notionalCurrency
             },
-            holdings: entries
+            holdings: entries,
+            defaultCurrency: NDAXTradingPlatform.defaultConversionCurrency
         }
     }
 
@@ -170,19 +174,24 @@ class NDAXTradingPlatform {
         return await NDAXTradingPlatform.readOnlyInstance.fetchTrades(marketId, null, 200);
     }
 
-    async getMyTrades(coinId, hours = 2, sinceTrackingStart) {
+    async getMyTrades(coinId, hours = 2, max, sinceTrackingStart) {
         //const since = sinceTrackingStart ? NDAXTradingPlatform.isTracking()[coinId][userId].since : Date.now() - 1000 * 60 * 60 * hours;
         const since = Date.now() - 1000 * 60 * 60 * hours;
 
-        const marketId = NDAXTradingPlatform.getCoinMarketId(coinId);
+        const marketId = coinId ? NDAXTradingPlatform.getCoinMarketId(coinId) : undefined;
 
-        const trades = await this.userSpecificInstance.fetchMyTrades(marketId, since);
+        const trades = await this.userSpecificInstance.fetchMyTrades(marketId, since, max);
 
-        const ticker = await this.fetchTicker(coinId);
-
-        const minutesUp = (Date.now() - since) / (60 * 1000);
-
-        return { trades, ticker, minutesUp, marketId };
+        return trades.map(entry => ({
+            symbol: entry.symbol,
+            side: entry.side,
+            type: entry.type,
+            volume: entry.amount,
+            price: entry.price,
+            value: entry.cost,
+            datetime: Utils.formatDate(entry.datetime)
+            // The result is in ascending date order by default
+        })).reverse();
     }
 }
 
