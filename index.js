@@ -3,8 +3,7 @@ const path = require('path');
 const {Pool} = require('pg');
 const auth = require('./auth');
 const utils = require('./modules/utils');
-
-
+const savingsPlan = require('./modules/savingsPlan');
 const userAuthenticationApi = require('./api/userAuthenticationApi');
 
 const app = express();
@@ -24,6 +23,10 @@ const pool = new Pool({
 });
 
 userAuthenticationApi(app, pool);
+
+// start savings plan module on boot-up
+const savingsPlanInstance = new savingsPlan(pool);
+savingsPlanInstance.init();
 
 // Load supported platforms
 const tradingPlatforms = require('./utils/supportedTradingPlatforms');
@@ -157,6 +160,37 @@ app.post('/api/:platform/stopArbitrageBot', auth.required, (req, res) => {
     }
 });
 
+app.get('/api/savings-plans', auth.required, async(req,res) => {
+   try {
+       res.send(savingsPlanInstance.getExistingPlans(req.user.id));
+   } catch (e) {
+       res.status(500).send(e.message);
+   }
+});
+
+app.post('/api/savings-plans', auth.required, async(req,res) => {
+    try {
+
+    } catch (e) {
+        res.status(500).send(e.message);
+    }
+});
+
+app.put('/api/savings-plans/:id', auth.required, async(req,res) => {
+    try {
+
+    } catch (e) {
+        res.status(500).send(e.message);
+    }
+});
+
+app.put('/api/savings-plans/:id', auth.required, async(req,res) => {
+    try {
+
+    } catch {
+        res.status(500).send(e.message);
+    }
+});
 
 app.get('/api/:platform/meta', auth.required, async (req, res) => {
     try {
