@@ -18,8 +18,6 @@ class MarketSpreadBot extends TradingBot {
 
         this.openOrder = null;
         this.remoteOrder = null;
-
-        this.run();
     }
 
     getId() {
