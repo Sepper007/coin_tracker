@@ -26,7 +26,8 @@ userAuthenticationApi(app, pool);
 
 // start savings plan module on boot-up
 const savingsPlanInstance = new savingsPlan(pool);
-savingsPlanInstance.init();
+
+setTimeout(() => savingsPlanInstance.init(), 10 * 1000);
 
 // Load supported platforms
 const tradingPlatforms = require('./utils/supportedTradingPlatforms');
