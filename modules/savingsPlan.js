@@ -109,8 +109,6 @@ class savingsPlan {
                 this.cache[user].config.forEach(async (config) => {
                     try {
 
-                        await this.cache[user].instances[config.platformName].createOrder(config.tradingPair, 0, config.amount, 'buy', 'market');
-
                         // Hourly recurring buys are made at the full hour, daily trades at noon etc.
 
                         if (!supportedFrequencyUnits.has(config.frequencyUnit)) {
