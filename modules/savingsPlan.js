@@ -159,21 +159,107 @@ class savingsPlan {
     getExistingPlans(userId) {
         const entries = this.cache[userId];
 
-        return entries.config.map(({tradingPair, amount, platformName, frequencyUnit, frequencyValue}) => ({
-            tradingPair, amount, platformName, frequencyUnit, frequencyValue
+        return entries.config.map(({id, tradingPair, amount, platformName, frequencyUnit, frequencyValue}) => ({
+            tradingPair, amount, platformName, frequencyUnit, frequencyValue, id
         }));
     }
 
-    createPlan(userId, platformName, tradingPair, amount, frequencyUnit = 'hour', frequencyValue = 24) {
+    async createPlan (userId, platformName, tradingPair, amount, frequencyUnit = 'hour', frequencyValue = 24) {
+        try {
+            const client = await this.pool.connect();
+
+            // Open transaction, and if any step along the way fails, rollback insert stmt
+            await client.query('BEGIN');
+
+            // Check if given-user has his credentials persisted for the given platform before proceeding
+            const configResult = await client.query('select user_id, platform, platform_user_id, private_key, public_key, input_vector ' +
+                'from account_mappings where user_id = $1', [userId]);
+
+            if (!configResult.rows.length) {
+                throw new Error(`User ${userId} doesn't have credentials persisted for platform ${platformName}`);
+            }
+
+            const persistedConfig = configResult.rows[0];
+
+            const generatedId = (await client.query("select nextval('savings_plans_ids') as id")).rows[0].id;
+
+            await client.query('Insert into savings_plans  (id, user_id, trading_pair, amount, platform_name, frequency_unit, frequency_value) values ($1,$2,$3,$4,$5,$6,$7)',
+                [generatedId, userId, tradingPair, amount, platformName, frequencyUnit, frequencyValue]);
+
+            const config =  {
+                id: generatedId,
+                tradingPair: tradingPair,
+                amount: amount,
+                platformName: platformName,
+                frequencyUnit: frequencyUnit,
+                frequencyValue: frequencyValue
+            };
+
+            this.cache[userId].config = [...this.cache[userId].config, config];
+
+            // There is already a cached platform instance for the platform that is to be used for this savingsPlan available, we don't have to do anything
+            if (!this.cache[userId].instances[platformName]) {
+                // otherwise create the new instance
+                const decryptedPrivateKey = utils.decryptPrivateKey(persistedConfig.private_key, persistedConfig.input_vector);
+
+                this.cache[userId].instances[platformName] = utils.createPlatformInstance(platformName, persistedConfig.user_id, persistedConfig.public_key, decryptedPrivateKey);
+            }
+
+            await client.query('COMMIT');
+
+            return {id: generatedId};
+        } catch (e) {
+            console.log('An error occurred while trying to save a new savings plans');
+            console.log(e);
+            throw e;
+        }
 
     }
 
-    updatePlan(userId, planId, platformName, tradingPair, amount, frequencyUnit = 'hour', frequencyValue = 24) {
+    async updatePlan(userId, planId, amount, frequencyUnit = 'hour', frequencyValue = 24) {
+        try {
+          const client = await this.pool.connect();
 
+          const numPlanId = parseInt(planId);
+
+          await client.query('update savings_plans set amount = $1, frequency_unit = $2, frequency_value = $3 where user_id = $4 and id = $5',
+              [amount, frequencyUnit, frequencyValue, userId, numPlanId]);
+
+          const configToBeChanged = this.cache[userId].config.find(config => config.id === numPlanId);
+
+          configToBeChanged.amount = amount;
+          configToBeChanged.frequencyUnit = frequencyUnit;
+          configToBeChanged.frequencyValue = frequencyValue;
+        } catch (e) {
+            console.log('An error occurred while trying to update a savings plans');
+            console.log(e);
+            throw e;
+        }
     }
 
-    deletePlan(userId, planId) {
+    async deletePlan(userId, planId) {
+        try {
+            const numPlanId = parseInt(planId);
 
+            const client = await this.pool.connect();
+
+            client.query('delete from savings_plans where id = $1', [numPlanId]);
+
+            this.cache[userId].config = this.cache[userId].config.filter(config => config.id !== numPlanId);
+
+            // Check if this plan that was just removed was the only one for this platform and if so, remove the cached platform object from the cache
+            const platformNames = Object.keys(this.cache[userId].instances);
+
+            platformNames.forEach(platformName => {
+                if (!(this.cache[userId].config.some(config => config.platformName === platformName))) {
+                    delete this.cache[userId].instances[platformName];
+                }
+            });
+        } catch (e) {
+            console.log('An error occurred while trying to update a savings plans');
+            console.log(e);
+            throw e;
+        }
     }
 }
 

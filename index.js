@@ -171,7 +171,15 @@ app.get('/api/savings-plans', auth.required, async(req,res) => {
 
 app.post('/api/savings-plans', auth.required, async(req,res) => {
     try {
+        const {platformName, tradingPair, amount, frequencyUnit, frequencyValue} = req.body;
 
+        if (!platformName || !tradingPair || !amount) {
+            throw new Error('platformName, tradingPair and amount are mandatory parameters');
+        }
+
+        const {id} = await savingsPlanInstance.createPlan(req.user.id, platformName, tradingPair, amount, frequencyUnit, frequencyValue);
+
+        res.send({id});
     } catch (e) {
         res.status(500).send(e.message);
     }
@@ -179,16 +187,30 @@ app.post('/api/savings-plans', auth.required, async(req,res) => {
 
 app.put('/api/savings-plans/:id', auth.required, async(req,res) => {
     try {
+        const { id } = req.params;
 
+        const {amount, frequencyUnit, frequencyValue} = req.body;
+
+        if (!id || !amount || !frequencyUnit || !frequencyValue) {
+            throw new Error('id, amount, frequencyUnit and frequencyValue are mandatory parameters');
+        }
+
+        await savingsPlanInstance.updatePlan(req.user.id, id, amount, frequencyUnit, frequencyValue);
+
+        res.send('{}', 204);
     } catch (e) {
         res.status(500).send(e.message);
     }
 });
 
-app.put('/api/savings-plans/:id', auth.required, async(req,res) => {
+app.delete('/api/savings-plans/:id', auth.required, async(req,res) => {
     try {
+        const { id } = req.params;
 
-    } catch {
+        await savingsPlanInstance.deletePlan(req.user.id, id);
+
+        res.send({}, 204);
+    } catch (e) {
         res.status(500).send(e.message);
     }
 });
@@ -513,7 +535,7 @@ app.post('/api/platform', auth.required, auth.adminOnly, async (req, res) => {
         } else {
             const client = await pool.connect();
 
-            await client.query('Insert into platforms set id = $1, description = $2', [id, name]);
+            await client.query('Insert into platforms (id, decription) value ($1, $2)', [id, name]);
 
             res.status(204).send();
         }
