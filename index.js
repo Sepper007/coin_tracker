@@ -171,13 +171,17 @@ app.get('/api/savings-plans', auth.required, async(req,res) => {
 
 app.post('/api/savings-plans', auth.required, async(req,res) => {
     try {
-        const {platformName, tradingPair, amount, frequencyUnit, frequencyValue} = req.body;
+        const {platformName, tradingPair, amount, currency, frequencyUnit, frequencyValue} = req.body;
 
-        if (!platformName || !tradingPair || !amount) {
-            throw new Error('platformName, tradingPair and amount are mandatory parameters');
+        if (!platformName || !tradingPair || !amount || !currency) {
+            throw new Error('platformName, tradingPair, currency and amount are mandatory parameters');
         }
 
-        const {id} = await savingsPlanInstance.createPlan(req.user.id, platformName, tradingPair, amount, frequencyUnit, frequencyValue);
+        if (!tradingPair.split('/').some(curr => curr === currency)) {
+            throw new Error(`Provided currency ${currency} is invalid for trading pair ${tradingPair}. The currency must be part of the trading pair.`);
+        }
+
+        const {id} = await savingsPlanInstance.createPlan(req.user.id, platformName, tradingPair, amount, currency, frequencyUnit, frequencyValue);
 
         res.send({id});
     } catch (e) {

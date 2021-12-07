@@ -14,14 +14,20 @@ class savingsPlan {
         try {
             const client = await this.pool.connect();
 
-            const savingsPlanResults = await client.query('select id, user_id, trading_pair, amount, platform_name, frequency_unit, frequency_value from savings_plans');
+            const savingsQueryStr = 'select t1.id as id, t1.user_id as user_id, t1.trading_pair as trading_pair, t1.amount as amount, t1.currency as currency, '
+                + 't1.frequency_unit as frequency_unit, t1.platform_name as platform_name, t2.description as platform_description, t1.frequency_value as frequency_value from savings_plans as t1 '
+                + 'inner join platforms as t2 on t1.platform_name = t2.id';
+
+            const savingsPlanResults = await client.query(savingsQueryStr);
 
             savingsPlanResults.rows.forEach(row => {
                 const obj = {
                     id: row.id,
                     tradingPair: row.trading_pair,
                     amount: row.amount,
+                    currency: row.currency,
                     platformName: row.platform_name,
+                    platformDescription: row.platform_description,
                     frequencyUnit: row.frequency_unit,
                     frequencyValue: row.frequency_value
                 };
@@ -146,7 +152,20 @@ class savingsPlan {
                             }
                         }
 
-                        await this.cache[user].instances[config.platformName].createOrder(config.tradingPair, 0, config.amount, 'buy', 'market');
+                        // Check if the selected currency is the first or the second part of the trading pair.
+                        // If it's the second part, we have to do a conversion using the current market price to determine the amount we want to buy
+                        // E.g. currency => CAD, tradingPair => ETH/CAD, amount => 2, Current ETH/CAD Price => 5000, calculated market order amount => 2 / 5000 = 0.0004
+
+                        let orderAmount = config.amount;
+
+                        if (config.tradingPair.split('/').indexOf(config.currency) > 0) {
+                            // Get the current market price and use it to calculate the amount for the market order
+                            const { ask } = await this.cache[user].instances[config.platformName].fetchTicker(config.tradingPair);
+
+                            orderAmount = config.amount / ask;
+                        }
+
+                        await this.cache[user].instances[config.platformName].createOrder(config.tradingPair, 0, orderAmount, 'buy', 'market');
                     } catch (e) {
                         console.log(`Failed to make recurring order for user ${user}, coin ${config.tradingPair} and platform ${config.platformName}, error: ${e.message}`);
                     }
@@ -159,12 +178,12 @@ class savingsPlan {
     getExistingPlans(userId) {
         const entries = this.cache[userId];
 
-        return entries.config.map(({id, tradingPair, amount, platformName, frequencyUnit, frequencyValue}) => ({
-            tradingPair, amount, platformName, frequencyUnit, frequencyValue, id
+        return entries.config.map(({id, tradingPair, amount, currency, platformName, platformDescription, frequencyUnit, frequencyValue}) => ({
+            tradingPair, amount, currency, platformName, platformDescription, frequencyUnit, frequencyValue, id
         }));
     }
 
-    async createPlan (userId, platformName, tradingPair, amount, frequencyUnit = 'hour', frequencyValue = 24) {
+    async createPlan (userId, platformName, tradingPair, amount,currency, frequencyUnit = 'hour', frequencyValue = 24) {
         try {
             const client = await this.pool.connect();
 
@@ -179,18 +198,30 @@ class savingsPlan {
                 throw new Error(`User ${userId} doesn't have credentials persisted for platform ${platformName}`);
             }
 
+            const platformResult = await client.query('select description from platforms where id = $1', [platformName]);
+
+            if (!platformResult.rows.length) {
+                throw new Error(`No description was found for platform with id ${platformName}`);
+            }
+
+            const platformDescription = platformResult.rows[0].description;
+
             const persistedConfig = configResult.rows[0];
 
             const generatedId = (await client.query("select nextval('savings_plans_ids') as id")).rows[0].id;
 
-            await client.query('Insert into savings_plans  (id, user_id, trading_pair, amount, platform_name, frequency_unit, frequency_value) values ($1,$2,$3,$4,$5,$6,$7)',
-                [generatedId, userId, tradingPair, amount, platformName, frequencyUnit, frequencyValue]);
+            const numPlanId = parseInt(generatedId);
+
+            await client.query('Insert into savings_plans  (id, user_id, trading_pair, amount, currency, platform_name, frequency_unit, frequency_value) values ($1,$2,$3,$4,$5,$6,$7,$8)',
+                [numPlanId, userId, tradingPair, amount, currency, platformName, frequencyUnit, frequencyValue]);
 
             const config =  {
-                id: generatedId,
+                id: numPlanId,
                 tradingPair: tradingPair,
                 amount: amount,
+                currency: currency,
                 platformName: platformName,
+                platformDescription,
                 frequencyUnit: frequencyUnit,
                 frequencyValue: frequencyValue
             };
