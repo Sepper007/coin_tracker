@@ -114,7 +114,6 @@ class savingsPlan {
             relevantUsers.forEach(user => {
                 this.cache[user].config.forEach(async (config) => {
                     try {
-
                         // Hourly recurring buys are made at the full hour, daily trades at noon etc.
 
                         if (!supportedFrequencyUnits.has(config.frequencyUnit)) {
