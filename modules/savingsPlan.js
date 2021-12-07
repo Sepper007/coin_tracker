@@ -103,8 +103,6 @@ class savingsPlan {
 
             const sleepTimer = (remainingMinutes * 60 + remainingSeconds) * 1000;
 
-            await utils.timeout(sleepTimer);
-
             console.log('Saving Plan module Woke up to perform recurring buyings');
 
             const relevantUsers = Object.keys(this.cache);
@@ -122,7 +120,7 @@ class savingsPlan {
                         }
 
                         if (config.frequencyUnit === 'day') {
-                            if (currentDate.getHours() !== 12 && currentDate.getMinutes() !== 0) {
+                            if (currentDate.getHours() !== 12 || currentDate.getMinutes() !== 0) {
                                 return;
                             }
                             if (currentDate.getDate() % config.frequencyValue !== 0) {
@@ -170,6 +168,9 @@ class savingsPlan {
                     }
                 });
             });
+
+
+            await utils.timeout(sleepTimer);
         }
     }
 
