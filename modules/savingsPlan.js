@@ -103,6 +103,8 @@ class savingsPlan {
 
             const sleepTimer = (remainingMinutes * 60 + remainingSeconds) * 1000;
 
+            await utils.timeout(sleepTimer);
+
             console.log('Saving Plan module Woke up to perform recurring buyings');
 
             const relevantUsers = Object.keys(this.cache);
@@ -168,9 +170,6 @@ class savingsPlan {
                     }
                 });
             });
-
-
-            await utils.timeout(sleepTimer);
         }
     }
 
@@ -238,7 +237,7 @@ class savingsPlan {
 
             await client.query('COMMIT');
 
-            return {id: generatedId};
+            return {id: numPlanId};
         } catch (e) {
             console.log('An error occurred while trying to save a new savings plans');
             console.log(e);
