@@ -223,8 +223,15 @@ app.get('/api/:platform/meta', auth.required, async (req, res) => {
     try {
         const {platform} = req.params;
 
+        const supportedCoins = tradingPlatforms[platform].supportedCoins;
+
+        const supportedCoinsArr = Object.keys(tradingPlatforms[platform].supportedCoins).map(key => ({
+            id: key,
+            ...supportedCoins[key]
+        }));
+
         res.send({
-            supportedCoins: tradingPlatforms[platform].supportedCoins
+            supportedCoins: supportedCoinsArr
         });
     } catch (e) {
         res.status(500).send(e.message);

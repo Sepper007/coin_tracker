@@ -42,7 +42,7 @@ class BinanceTradingPlatform {
         },
         btc_usdt: {
             marketId: 'BTC/USDT',
-            meta: 'BTC',
+            metaId: 'BTC',
             minimumQuantity: 0.0001
         }
     };
