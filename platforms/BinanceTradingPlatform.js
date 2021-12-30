@@ -8,7 +8,7 @@ class BinanceTradingPlatform {
         doge: {
             marketId: 'DOGE/USDT',
             metaId: 'DOGE',
-            minimumQuantity: 10
+            minimumQuantity: 1
         },
         xrp: {
             marketId: 'XRP/USDT',
@@ -55,6 +55,10 @@ class BinanceTradingPlatform {
         const mappedCoin = BinanceTradingPlatform.supportedCoins[coinId];
 
         if (!mappedCoin) {
+            // Also allow valid tradingPairs directly, e.g. ETH/CAD instead of eth
+            if (Object.values(BinanceTradingPlatform.supportedCoins).some(coin => coin.marketId)) {
+                return coinId;
+            }
             throw new Error(`Coin ${coinId} is not supported, the list of supported coins is: ${Object.keys(BinanceTradingPlatform.supportedCoins).join(',')}`);
         }
 
@@ -65,6 +69,10 @@ class BinanceTradingPlatform {
         const mappedCoin = BinanceTradingPlatform.supportedCoins[coinId];
 
         if (!mappedCoin) {
+            // Also allow valid tradingPairs directly, e.g. ETH/CAD instead of eth
+            if (Object.values(BinanceTradingPlatform.supportedCoins).some(coin => coin.marketId)) {
+                return coinId;
+            }
             throw new Error(`Coin ${coinId} is not supported, the list of supported coins is: ${Object.keys(BinanceTradingPlatform.supportedCoins).join(',')}`);
         }
 

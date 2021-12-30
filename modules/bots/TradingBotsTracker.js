@@ -1,18 +1,22 @@
 const MarketSpreadBot = require('./MarketSpreadBot');
 const ArbitrageBot = require('./ArbitrageBot');
+const GridBot = require('./GridBot');
+const TradingBotActivityLog = require('./TradingBotActivityLog');
 const arbitrageOpportunity = require('../arbitrageOpportunity');
+const PubSub = require('pubsub-js');
 
 class TradingBotsTracker {
     static botTypes = {
         marketSpread: 'marketSpread',
-        arbitrage: 'arbitrage'
+        arbitrage: 'arbitrage',
+        grid: 'grid'
     };
 
     constructor() {
         this.activeBots = {};
     }
 
-    startBotForUser(userEmail, botType, platFormName, tradingPlatformInstance, parameters) {
+    startBotForUser(userEmail, userId, botType, platFormName, tradingPlatformInstance, parameters) {
 
         let bot;
 
@@ -62,6 +66,34 @@ class TradingBotsTracker {
 
                 break;
             }
+            case TradingBotsTracker.botTypes.grid: {
+                const {
+                    fetchTicker,
+                    createOrder,
+                    getMinimumQuantity
+                } = tradingPlatformInstance;
+
+                const {coinId, maximumInvestment, numberOfGrids, percentagePerGrid, startingPrice, strategy} = parameters;
+
+                bot = new GridBot(
+                    userEmail,
+                    userId,
+                    platFormName,
+                    coinId,
+                    maximumInvestment,
+                    // Bind all functions to the initial instance of the tradingPlatform, to prevent any issue with the this-context at runtime
+                    fetchTicker.bind(tradingPlatformInstance),
+                    // Encapsulate all user-id specific methods here, so the bot instance doesn't have to know the user-id
+                    // !!!! IMPORTANT: don't use arrow-functions here, as you can't manually override the this context !!!!
+                    (...params) => createOrder.bind(tradingPlatformInstance)(...params),
+                    (...params) => getMinimumQuantity.bind(tradingPlatformInstance)(...params),
+                    numberOfGrids,
+                    percentagePerGrid,
+                    startingPrice,
+                    strategy
+                );
+                break;
+            }
             default:
                 throw new Error(`Bot Type ${botType} is not supported`);
         }
@@ -69,6 +101,14 @@ class TradingBotsTracker {
         bot.run();
 
         const id = bot.getId();
+
+        PubSub.publish(`${TradingBotActivityLog.BOT_CUD_TOPIC_IDENTIFIER}.${TradingBotActivityLog.BOT_CUD_EVENT.CREATE}`, {
+                uuid: bot.uuid,
+                userId,
+                botType,
+                additionalInfo: parameters
+            }
+        );
 
 
         if (this.activeBots[id]) {
@@ -98,12 +138,23 @@ class TradingBotsTracker {
 
                 break;
             }
+            case TradingBotsTracker.botTypes.grid: {
+                const {coinId} = parameters;
+
+                id = GridBot.generateId(platformName, userEmail, coinId);
+                break;
+            }
             default:
                 throw new Error(`Bot Type ${botType} is not supported`);
         }
 
         if (this.activeBots[id]) {
             this.activeBots[id].instance.stop(soft);
+
+            PubSub.publish(`${TradingBotActivityLog.BOT_CUD_TOPIC_IDENTIFIER}.${TradingBotActivityLog.BOT_CUD_EVENT.STOP}`, {
+                    uuid: this.activeBots[id].instance.uuid
+                }
+            );
 
             delete this.activeBots[id];
         }

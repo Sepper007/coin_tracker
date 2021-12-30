@@ -1,7 +1,10 @@
+const {v4: uuid} = require('uuid');
+
 class TradingBot {
     constructor() {
         this.isRunning = true;
         this.softShutdown = false;
+        this.uuid = uuid();
     }
 
     stop(softShutdown) {

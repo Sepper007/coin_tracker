@@ -5,6 +5,7 @@ const auth = require('./auth');
 const utils = require('./modules/utils');
 const savingsPlan = require('./modules/savingsPlan');
 const userAuthenticationApi = require('./api/userAuthenticationApi');
+const TradingBotActivityLog = require('./modules/bots/TradingBotActivityLog');
 
 const app = express();
 
@@ -26,6 +27,9 @@ userAuthenticationApi(app, pool);
 
 // start savings plan module on boot-up
 const savingsPlanInstance = new savingsPlan(pool);
+
+const tradingBotActivityLog = new TradingBotActivityLog(pool);
+tradingBotActivityLog.start();
 
 setTimeout(() => savingsPlanInstance.init(), 10 * 1000);
 
@@ -79,11 +83,11 @@ const tradingBotsTracker = new TradingBotsTracker();
 app.post('/api/:platform/startMarketSpreadBot/coin/:coinId/amount/:amount', auth.required, (req, res) => {
     const {coinId, amount, platform} = req.params;
 
-    const {email} = req.user;
+    const {email, id} = req.user;
 
     const platformInstance = getTradingPlatform(req);
 
-    tradingBotsTracker.startBotForUser(email, TradingBotsTracker.botTypes.marketSpread, platform, platformInstance, {
+    tradingBotsTracker.startBotForUser(email, id, TradingBotsTracker.botTypes.marketSpread, platform, platformInstance, {
         coinId,
         amount
     });
@@ -103,11 +107,66 @@ app.post('/api/:platform/stopMarketSpreadBot/coin/:coinId', auth.required, (req,
     res.send('{}', 204);
 });
 
+app.post('/api/:platform/startGridBot', auth.required, (req, res) => {
+    try {
+        const {coinId, maximumInvestment, numberOfGrids, percentagePerGrid, startingPrice, strategy} = req.body;
+
+        const {platform} = req.params;
+
+        const {email, id} = req.user;
+
+        if (!coinId) {
+            throw new Error('coinId is a required value');
+        }
+
+        if (!maximumInvestment) {
+            throw new Error('maximumInvestment is a required value');
+        }
+
+        const platformInstance = getTradingPlatform(req);
+
+        tradingBotsTracker.startBotForUser(email, id, TradingBotsTracker.botTypes.grid, platform, platformInstance, {
+            coinId,
+            maximumInvestment,
+            numberOfGrids,
+            percentagePerGrid,
+            startingPrice,
+            strategy
+        });
+
+        res.send('{}', 204);
+    } catch (e) {
+        res.status(500).send(JSON.stringify(e, Object.getOwnPropertyNames(e)));
+    }
+});
+
+app.post('/api/:platform/stopGridBot', auth.required, (req, res) => {
+    try {
+        const {coinId} = req.body;
+
+        const {platform} = req.params;
+
+        const {email} = req.user;
+
+        if (!coinId) {
+            throw new Error('coinId is a required value');
+        }
+
+        tradingBotsTracker.stopBotForUser(email, TradingBotsTracker.botTypes.grid, platform, {
+            coinId
+        }, false);
+
+        res.send('{}', 204);
+    } catch (e) {
+        res.status(500).send(JSON.stringify(e, Object.getOwnPropertyNames(e)));
+    }
+});
+
 app.post('/api/:platform/startArbitrageBot', auth.required, (req, res) => {
     try {
         const {tradingPairs, comparePair, checkInterval = 30, amount} = req.body;
 
-        const {platform} = req.params;
+        const {platform, id} = req.params;
 
         const {email} = req.user;
 
@@ -125,7 +184,7 @@ app.post('/api/:platform/startArbitrageBot', auth.required, (req, res) => {
 
         const platformInstance = getTradingPlatform(req);
 
-        tradingBotsTracker.startBotForUser(email, TradingBotsTracker.botTypes.arbitrage, platform, platformInstance, {
+        tradingBotsTracker.startBotForUser(email, id, TradingBotsTracker.botTypes.arbitrage, platform, platformInstance, {
             tradingPairs,
             comparePair,
             checkInterval,
@@ -148,7 +207,7 @@ app.post('/api/:platform/stopArbitrageBot', auth.required, (req, res) => {
 
         const soft = req.query.soft || false;
 
-        tradingBotsTracker.stopBotForUser(email, TradingBotsTracker.botTypes.arbitrage, platform,{
+        tradingBotsTracker.stopBotForUser(email, TradingBotsTracker.botTypes.arbitrage, platform, {
             tradingPairs,
             comparePair,
             checkInterval,
@@ -161,15 +220,15 @@ app.post('/api/:platform/stopArbitrageBot', auth.required, (req, res) => {
     }
 });
 
-app.get('/api/savings-plans', auth.required, async(req,res) => {
-   try {
-       res.send(savingsPlanInstance.getExistingPlans(req.user.id));
-   } catch (e) {
-       res.status(500).send(e.message);
-   }
+app.get('/api/savings-plans', auth.required, async (req, res) => {
+    try {
+        res.send(savingsPlanInstance.getExistingPlans(req.user.id));
+    } catch (e) {
+        res.status(500).send(e.message);
+    }
 });
 
-app.post('/api/savings-plans', auth.required, async(req,res) => {
+app.post('/api/savings-plans', auth.required, async (req, res) => {
     try {
         const {platformName, tradingPair, amount, currency, frequencyUnit, frequencyValue} = req.body;
 
@@ -189,9 +248,9 @@ app.post('/api/savings-plans', auth.required, async(req,res) => {
     }
 });
 
-app.put('/api/savings-plans/:id', auth.required, async(req,res) => {
+app.put('/api/savings-plans/:id', auth.required, async (req, res) => {
     try {
-        const { id } = req.params;
+        const {id} = req.params;
 
         const {amount, frequencyUnit, frequencyValue} = req.body;
 
@@ -207,9 +266,9 @@ app.put('/api/savings-plans/:id', auth.required, async(req,res) => {
     }
 });
 
-app.delete('/api/savings-plans/:id', auth.required, async(req,res) => {
+app.delete('/api/savings-plans/:id', auth.required, async (req, res) => {
     try {
-        const { id } = req.params;
+        const {id} = req.params;
 
         await savingsPlanInstance.deletePlan(req.user.id, id);
 
@@ -509,18 +568,18 @@ app.get('/api/:platform/my-trades/coin/:coinId/hours/:hours', auth.required, asy
     }
 });
 
-const past5YearsInHours  = 5 * 365 * 24;
+const past5YearsInHours = 5 * 365 * 24;
 
-app.get('/api/:platform/my-trades', auth.required, async(req, res) => {
-   try {
-       const { top = 10, since = past5YearsInHours } = req.query;
+app.get('/api/:platform/my-trades', auth.required, async (req, res) => {
+    try {
+        const {top = 10, since = past5YearsInHours} = req.query;
 
-       const platformInstance = getTradingPlatform(req);
+        const platformInstance = getTradingPlatform(req);
 
-       res.send(await platformInstance.getMyTrades(undefined, since, top));
-   } catch (e) {
-       res.send(e.message, 500);
-   }
+        res.send(await platformInstance.getMyTrades(undefined, since, top));
+    } catch (e) {
+        res.send(e.message, 500);
+    }
 });
 
 app.get('/api/:platform/trades/user/:userId/coin/:coinId/since-tracking-start', auth.required, async (req, res) => {
