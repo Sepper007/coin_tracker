@@ -1,8 +1,8 @@
 const PubSub = require('pubsub-js');
 
-const insertTransactionQuery = 'INSERT INTO bot_transaction_log (uuid, transaction_type, transaction_amount, transaction_pair, additional_info) values ($1,$2,$3,$4,$5)';
+const insertTransactionQuery = 'INSERT INTO bot_transaction_log (uuid, transaction_type, transaction_amount, transaction_price, transaction_pair, additional_info) values ($1,$2,$3,$4,$5,$6)';
 
-const insertBotQuery = 'INSERT INTO bot_log (uuid, user_id, bot_type, additional_info,active) values ($1,$2,$3,$4, 1)';
+const insertBotQuery = 'INSERT INTO bot_log (uuid, user_id, bot_type, platform_name, additional_info,active) values ($1,$2,$3,$4,$5, 1)';
 const updateBotQuery = 'UPDATE bot_log set additional_info = $1 where uuid = $2';
 const stopBotQuery = 'UPDATE bot_log set active = 0 where uuid = $1';
 
@@ -28,10 +28,12 @@ class TradingBotActivityLog {
     }
 
     async botCudSubscriptionHandler (topicIdentifier, data) {
+        let client;
+
         try {
             const subTopic = topicIdentifier.split('.')[1];
 
-            const client = await this.pool.connect();
+            client = await this.pool.connect();
 
             switch (subTopic) {
                 case TradingBotActivityLog.BOT_CUD_EVENT.UPDATE: {
@@ -56,39 +58,51 @@ class TradingBotActivityLog {
                         uuid,
                         userId,
                         botType,
+                        platFormName,
                         additionalInfo
                     } = data;
 
-                    await client.query(insertBotQuery, [uuid, userId, botType, additionalInfo]);
+                    await client.query(insertBotQuery, [uuid, userId, botType, platFormName, additionalInfo]);
                     break;
                 }
             }
 
         } catch (e) {
             console.log(`An error occurred while trying to process bot cud message: ${e.message}`);
+        } finally {
+            if (client) {
+                client.release();
+            }
         }
     }
 
     async botTransactionSubscriptionHandler (topicIdentifier, data) {
+        let client;
+
         try {
             const {
                 uuid,
                 transactionType,
                 transactionAmount,
+                transactionPrice,
                 transactionPair,
                 additionalInfo
             } = data;
 
-            const client = await this.pool.connect();
+            client = await this.pool.connect();
 
             try {
-                await client.query(insertTransactionQuery, [uuid, transactionType, transactionAmount, transactionPair, additionalInfo]);
+                await client.query(insertTransactionQuery, [uuid, transactionType, transactionAmount, transactionPrice, transactionPair, additionalInfo]);
             } catch (e) {
                 console.log(`An error occurred, while trying to persist a Bot Transaction Log ${e.message}`);
             }
 
         } catch (e) {
             console.log(`Failed to log bot transaction: ${e.message}`);
+        } finally {
+            if (client) {
+                client.release();
+            }
         }
     }
 

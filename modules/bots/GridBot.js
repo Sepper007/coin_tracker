@@ -2,6 +2,9 @@ const utils = require('../utils');
 const TradingBot = require('./TradingBot');
 const PubSub = require('pubsub-js');
 const TradingBotActivityLog = require('./TradingBotActivityLog');
+const {Pool} = require('pg');
+
+const platformTransactionLogInsert = 'insert into bot_platform_transaction_log (uuid, platform_transaction_id) values ($1,$2)';
 
 const initArrayOfSizeN = (n) => [...Array(n).keys()].map( i => i+1);
 
@@ -32,6 +35,30 @@ class GridBot extends TradingBot {
             strategy === 'long' ? 0 : maximumInvestment;
 
         this.lastExecutedGrid = 0;
+
+        // Create the pool and database logic here for now, as the pubsub module doesn't seem to catch every event.
+        this.pool = new Pool({
+            connectionString: process.env.DATABASE_URL,
+            ssl: {
+                rejectUnauthorized: false
+            }
+        });
+    }
+
+    async logPlatformOrder(platformTransactionId) {
+        let client;
+
+        try {
+            client = await this.pool.connect();
+
+            await client.query(platformTransactionLogInsert, [this.uuid, platformTransactionId]);
+        } catch (e) {
+            console.log(`Something went wrong while trying to persist a platform order: ${e.message}`);
+        } finally {
+            if (client) {
+                client.release();
+            }
+        }
     }
 
     async initStartingPrice(startingPrice, coinId) {
@@ -91,11 +118,11 @@ class GridBot extends TradingBot {
         const currentGrid = multiplier * Math.floor(absoluteVale / (this.percentagePerGrid / 100));
 
         if (currentGrid !== this.lastExecutedGrid) {
-            await this.executeGridOrder(currentGrid);
+            await this.executeGridOrder(currentGrid, last);
         }
     }
 
-    async executeGridOrder(level) {
+    async executeGridOrder(level, last) {
         if (level === 0) {
             this.lastExecutedGrid = 0;
             return;
@@ -137,15 +164,22 @@ class GridBot extends TradingBot {
                 .length;
         }
 
-        if (this.currentlyInvestedFunds === this.maximumInvestment && orderType === 'buy') {
-            console.log(`The GridBot has reached the maximum investment amount, pausing further buys until funds were sold`);
-            return;
-        }
-
         let amount = this.maximumInvestment / this.numberOfGrids;
 
         if (levelSkipped) {
             amount += (amount * levelSkipped);
+        }
+
+
+        if (((this.currentlyInvestedFunds + amount) > this.maximumInvestment) && orderType === 'buy') {
+            if (this.currentlyInvestedFunds < this.maximumInvestment) {
+                // Adjust the amount if the maximumInvestment amount isn't fully filled yet. This can happen e.g.
+                // if a level was skipped.
+                amount = this.maximumInvestment - this.currentlyInvestedFunds;
+            } else {
+                console.log(`The GridBot has reached the maximum investment amount, pausing further buys until funds were sold`);
+                return;
+            }
         }
 
         if (this.currentlyInvestedFunds < amount && orderType === 'sell') {
@@ -155,16 +189,21 @@ class GridBot extends TradingBot {
 
         try {
             console.log(`creating order for level ${relevantLevel} with amount ${amount}`);
-            await this.createOrder(this.coinId, undefined, amount, orderType, 'market');
+            const { id } = await this.createOrder(this.coinId, undefined, amount, orderType, 'market');
+
+            // ignore error here, as it is already logged in the corresponding method
+            this.logPlatformOrder(id).catch(() => {});
 
             // After the order went thru successfully, publish a message that'll be picked up by the transaction log module
             const logObject = {
                 uuid: this.uuid,
                 transactionType: orderType,
                 transactionAmount: amount,
+                transactionPrice: last,
                 transactionPair: this.coinId,
                 additionalInfo: {
-                    level: relevantLevel
+                    level: relevantLevel,
+                    investedFunds: this.currentlyInvestedFunds
                 }
             };
 
@@ -189,9 +228,9 @@ class GridBot extends TradingBot {
 
         if (levelSkipped) {
             // Set the hit value to true for any entries that come before the current relevantLevel
-            for(let i = 1; i < relevantLevel; i++) {
-                relevantGrid[i].hit = true;
-                opposingGrid[i].hit = false;
+            for (let i = levelSkipped; i > 0; i--) {
+                relevantGrid[relevantLevel - i].hit = true;
+                opposingGrid[relevantLevel - i].hit = false;
             }
         }
     }

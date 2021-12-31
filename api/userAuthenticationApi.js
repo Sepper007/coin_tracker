@@ -38,27 +38,37 @@ const userAuthenticationApi = (app, pool) => {
     passport.use(new LocalStrategy(
         {usernameField: 'email'},
         async (email, password, done) => {
-            // Check if given user exists in the database
-            const client = await pool.connect();
+            let client;
 
-            const result = await client.query('SELECT id, email, hash, salt FROM users where email = $1', [email.toLowerCase()]);
+            try {
+                // Check if given user exists in the database
+                client = await pool.connect();
 
-            if (!result.rows || !result.rows.length) {
+                const result = await client.query('SELECT id, email, hash, salt FROM users where email = $1', [email.toLowerCase()]);
+
+                if (!result.rows || !result.rows.length) {
+                    return done('User not found or invalid password', false, {message: 'User not found or invalid password'});
+                }
+
+                const {hash, salt, id} = result.rows[0];
+
+                // Apply same hashing logic as in the create user case
+                const calculatedHash = createPasswordHash(password, salt);
+
+                if (calculatedHash === hash) {
+                    return done(null, {id});
+                }
+
+                // Return same error message as in the user not found case, so it's not exposed whether a given e-mail
+                // address has an account with this webpage.
                 return done('User not found or invalid password', false, {message: 'User not found or invalid password'});
+            } catch  (e) {
+                return done('Something went wrong while trying to log the user in', false, {message: e.message});
+            } finally {
+                if (client) {
+                    client.release();
+                }
             }
-
-            const {hash, salt, id} = result.rows[0];
-
-            // Apply same hashing logic as in the create user case
-            const calculatedHash = createPasswordHash(password, salt);
-
-            if (calculatedHash === hash) {
-                return done(null, {id});
-            }
-
-            // Return same error message as in the user not found case, so it's not exposed whether a given e-mail
-            // address has an account with this webpage.
-            return done('User not found or invalid password', false, {message: 'User not found or invalid password'});
         }
     ));
 
@@ -72,13 +82,14 @@ const userAuthenticationApi = (app, pool) => {
     const userCache = {};
 
     passport.deserializeUser(async (user, done) => {
+        let client;
         try {
             if (userCache[user.id]) {
                 done(null, userCache[user.id]);
                 return;
             }
 
-            const client = await pool.connect();
+            client = await pool.connect();
 
             const result = await client.query('SELECT id, email FROM users where id = $1', [user.id]);
 
@@ -112,6 +123,10 @@ const userAuthenticationApi = (app, pool) => {
             done(null, userEntry);
         } catch (e) {
             done(e.message, {id: user.id});
+        } finally {
+            if (client) {
+                client.release();
+            }
         }
     });
 
@@ -178,11 +193,13 @@ const userAuthenticationApi = (app, pool) => {
     });
 
     app.get('/api/activate-profile/:uid', async (req, res) => {
+        let client;
+
         try {
 
             const {uid} = req.params;
 
-            const client = await pool.connect();
+            client = await pool.connect();
 
             const result = await client.query('SELECT t1.id, t2.activated FROM account_activations t1 inner join users t2 on t1.id = t2.id WHERE t1.uid = $1', [uid]);
 
@@ -203,11 +220,17 @@ const userAuthenticationApi = (app, pool) => {
             console.log(`An error occurred while trying to activate an account: ${e.message}`);
 
             res.redirect('/#/login?accountActivated=error');
+        } finally {
+            if (client) {
+                client.release();
+            }
         }
     });
 
     app.post('/api/:platform/tokens', auth.required, async (req, res) => {
         const {platform} = req.params;
+
+        let client;
 
         try {
             const {privateKey, publicKey, userId} = req.body;
@@ -226,7 +249,7 @@ const userAuthenticationApi = (app, pool) => {
 
             const encryptedPrivateKey = Buffer.concat([cipher.update(privateKey), cipher.final()]);
 
-            const client = await pool.connect();
+            client = await pool.connect();
 
             await client.query('Insert into account_mappings (user_id, platform, platform_user_id, private_key, public_key, input_vector) values ($1,$2,$3,$4,$5,$6)',
                 [req.user.id, platform, userId, encryptedPrivateKey.toString('hex'), publicKey, inputVector]);
@@ -241,6 +264,10 @@ const userAuthenticationApi = (app, pool) => {
         } catch (e) {
             console.log(`An error occurred while trying to persist a platform credentials mapping for user ${req.user} and platform ${platform}: ${e.message}`);
             res.status(500).send({errorMessage: e.message});
+        } finally {
+            if (client) {
+                client.release();
+            }
         }
     });
 
@@ -256,7 +283,7 @@ const userAuthenticationApi = (app, pool) => {
             if (userCache[req.user.id]) {
                 delete userCache[req.user.id];
             }
- 
+
             res.status(204).send();
         } catch (e) {
             console.log(`An error occurred while deleting the tokens for user ${req.user} and platform ${platform}`);

@@ -597,13 +597,15 @@ app.get('/api/:platform/trades/user/:userId/coin/:coinId/since-tracking-start', 
 });
 
 app.post('/api/platform', auth.required, auth.adminOnly, async (req, res) => {
+    let client;
+
     try {
         const {name, id} = req.body;
 
         if (!name || !id) {
             res.status(400).send('Id and name are required paramters');
         } else {
-            const client = await pool.connect();
+            client = await pool.connect();
 
             await client.query('Insert into platforms (id, decription) value ($1, $2)', [id, name]);
 
@@ -611,6 +613,8 @@ app.post('/api/platform', auth.required, auth.adminOnly, async (req, res) => {
         }
     } catch (e) {
         res.send(e.message, 500);
+    } finally {
+        client.release();
     }
 });
 
@@ -628,8 +632,9 @@ app.post('/api/platform/:id/active/:active', auth.required, auth.adminOnly, asyn
 });
 
 app.get('/api/platform', auth.required, async (req, res) => {
+    let client;
     try {
-        const client = await pool.connect();
+        client = await pool.connect();
 
         const result = await client.query('SELECT id, description, currently_active FROM platforms');
 
@@ -644,10 +649,15 @@ app.get('/api/platform', auth.required, async (req, res) => {
         res.send(mappedResp);
     } catch (e) {
         res.send(e.message, 500);
+    } finally {
+        if (client) {
+            client.release();
+        }
     }
 });
 
 app.get('/api/test/db', async (req, res) => {
+    let client;
     try {
         const pool = new Pool({
             connectionString: process.env.DATABASE_URL,
@@ -656,15 +666,18 @@ app.get('/api/test/db', async (req, res) => {
             }
         });
 
-        const client = await pool.connect();
+        client = await pool.connect();
         const result = await client.query('SELECT * FROM test_table');
         const results = {'results': (result) ? result.rows : null};
-        client.release();
 
         res.send(results);
     } catch (err) {
         console.error(err);
         res.send("Error " + err);
+    } finally {
+        if (client) {
+            client.release();
+        }
     }
 });
 

@@ -108,7 +108,12 @@ class BinanceTradingPlatform {
     }
 
     async createOrder(coinId, price, amount, action = 'sell', type = 'limit') {
-        return await this.userSpecificInstance.createOrder(BinanceTradingPlatform.getCoinMarketId(coinId), type, action, amount, price);
+        const resp = await this.userSpecificInstance.createOrder(BinanceTradingPlatform.getCoinMarketId(coinId), type, action, amount, price);
+
+        return {
+            id: resp.info.orderId,
+            ...resp
+        };
     }
 
     async getBalance() {

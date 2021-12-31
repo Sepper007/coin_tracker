@@ -54,7 +54,7 @@ class NDAXTradingPlatform {
 
         if (!mappedCoin) {
             // Also allow valid tradingPairs directly, e.g. ETH/CAD instead of eth
-            if (Object.values(NDAXTradingPlatform.supportedCoins).some(coin => coin.marketId)) {
+            if (Object.values(NDAXTradingPlatform.supportedCoins).some(coin => coin.metaId)) {
                 return coinId;
             }
             throw new Error(`Coin ${coinId} is not supported, the list of supported coins is: ${Object.keys(NDAXTradingPlatform.supportedCoins).join(',')}`);

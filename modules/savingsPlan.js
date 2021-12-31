@@ -11,8 +11,10 @@ class savingsPlan {
     }
 
     async init() {
+        let client;
+
         try {
-            const client = await this.pool.connect();
+            client = await this.pool.connect();
 
             const savingsQueryStr = 'select t1.id as id, t1.user_id as user_id, t1.trading_pair as trading_pair, t1.amount as amount, t1.currency as currency, '
                 + 't1.frequency_unit as frequency_unit, t1.platform_name as platform_name, t2.description as platform_description, t1.frequency_value as frequency_value from savings_plans as t1 '
@@ -84,6 +86,10 @@ class savingsPlan {
         } catch (e) {
             console.log(`ERROR WHILE INITIALISING THE SAVINGS PLANS MODULE: ${e.message}`);
             console.log(e);
+        } finally {
+            if (client) {
+                client.release();
+            }
         }
     }
 
@@ -183,8 +189,9 @@ class savingsPlan {
     }
 
     async createPlan (userId, platformName, tradingPair, amount,currency, frequencyUnit = 'hour', frequencyValue = 24) {
+        let client;
         try {
-            const client = await this.pool.connect();
+            client = await this.pool.connect();
 
             // Open transaction, and if any step along the way fails, rollback insert stmt
             await client.query('BEGIN');
@@ -242,13 +249,18 @@ class savingsPlan {
             console.log('An error occurred while trying to save a new savings plans');
             console.log(e);
             throw e;
+        } finally {
+            if (client) {
+                client.release();
+            }
         }
 
     }
 
     async updatePlan(userId, planId, amount, frequencyUnit = 'hour', frequencyValue = 24) {
+        let client;
         try {
-          const client = await this.pool.connect();
+          client = await this.pool.connect();
 
           const numPlanId = parseInt(planId);
 
@@ -264,14 +276,19 @@ class savingsPlan {
             console.log('An error occurred while trying to update a savings plans');
             console.log(e);
             throw e;
+        } finally {
+            if (client) {
+                client.release();
+            }
         }
     }
 
     async deletePlan(userId, planId) {
+        let client;
         try {
             const numPlanId = parseInt(planId);
 
-            const client = await this.pool.connect();
+            client = await this.pool.connect();
 
             client.query('delete from savings_plans where id = $1', [numPlanId]);
 
@@ -289,6 +306,10 @@ class savingsPlan {
             console.log('An error occurred while trying to update a savings plans');
             console.log(e);
             throw e;
+        } finally {
+            if (client) {
+                client.release();
+            }
         }
     }
 }

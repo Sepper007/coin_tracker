@@ -106,6 +106,7 @@ class TradingBotsTracker {
                 uuid: bot.uuid,
                 userId,
                 botType,
+                platFormName,
                 additionalInfo: parameters
             }
         );
