@@ -164,7 +164,9 @@ class GridBot extends TradingBot {
                 .length;
         }
 
-        let amount = this.maximumInvestment / this.numberOfGrids;
+        const chunkSize = this.maximumInvestment / this.numberOfGrids;
+
+        let amount = chunkSize;
 
         if (levelSkipped) {
             amount += (amount * levelSkipped);
@@ -172,10 +174,14 @@ class GridBot extends TradingBot {
 
 
         if (((this.currentlyInvestedFunds + amount) > this.maximumInvestment) && orderType === 'buy') {
-            if (this.currentlyInvestedFunds < this.maximumInvestment) {
+            // there is still room left int he maximum investment value and there's room for at least 1 full chunk
+            if (this.currentlyInvestedFunds < this.maximumInvestment &&
+                (this.maximumInvestment - this.currentlyInvestedFunds) > chunkSize) {
                 // Adjust the amount if the maximumInvestment amount isn't fully filled yet. This can happen e.g.
                 // if a level was skipped.
-                amount = this.maximumInvestment - this.currentlyInvestedFunds;
+                const diff = this.maximumInvestment - this.currentlyInvestedFunds;
+
+                amount = diff - diff % chunkSize;
             } else {
                 console.log(`The GridBot has reached the maximum investment amount, pausing further buys until funds were sold`);
                 return;
@@ -190,6 +196,14 @@ class GridBot extends TradingBot {
         try {
             console.log(`creating order for level ${relevantLevel} with amount ${amount}`);
             const { id } = await this.createOrder(this.coinId, undefined, amount, orderType, 'market');
+
+            if (orderType === 'buy') {
+                this.currentlyInvestedFunds += amount;
+            } else {
+                this.currentlyInvestedFunds -= amount;
+            }
+
+            this.lastExecutedGrid = relevantLevel;
 
             // ignore error here, as it is already logged in the corresponding method
             this.logPlatformOrder(id).catch(() => {});
@@ -214,9 +228,6 @@ class GridBot extends TradingBot {
             return;
         }
 
-        this.currentlyInvestedFunds += amount;
-        this.lastExecutedGrid = relevantLevel;
-
         relevantGrid[Math.abs(relevantLevel) - 1].hit = true;
 
         // After this level was successfully hit and the order went thru successfully, unblock the corresponding level on the opposing side of the grid
@@ -226,11 +237,11 @@ class GridBot extends TradingBot {
 
         opposingGrid[Math.abs(relevantLevel) - 1].hit = false;
 
-        if (levelSkipped) {
+        if (Math.abs(levelSkipped)) {
             // Set the hit value to true for any entries that come before the current relevantLevel
-            for (let i = levelSkipped; i > 0; i--) {
-                relevantGrid[relevantLevel - i].hit = true;
-                opposingGrid[relevantLevel - i].hit = false;
+            for (let i = Math.abs(levelSkipped); i > 0; i--) {
+                relevantGrid[Math.abs(relevantLevel) - i].hit = true;
+                opposingGrid[Math.abs(relevantLevel) - i].hit = false;
             }
         }
     }
