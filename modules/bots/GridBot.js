@@ -143,7 +143,7 @@ class GridBot extends TradingBot {
                 // The current level is out of bound, but there is at least 1 level that was skipped. Manually set the current level to the highest level
                 const filteredKeys = [...relevantGrid.keys()].filter(key => !relevantGrid[key].hit);
 
-                relevantLevel = Math.max(...filteredKeys.map(key => Number.parseInt(key)));
+                relevantLevel = (relevantLevel < 0 ? -1 : 1) * Math.max(...filteredKeys.map(key => Number.parseInt(key)));
             }
         }
 
