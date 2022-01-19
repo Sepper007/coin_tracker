@@ -542,9 +542,11 @@ app.get('/api/:platform/my-trades/coin/:coinId', auth.required, async (req, res)
     try {
         const {coinId} = req.params;
 
+        const {hours = undefined} = req.query;
+
         const platformInstance = getTradingPlatform(req);
 
-        const resp = await platformInstance.getMyTrades(coinId);
+        const resp = await platformInstance.getMyTrades(coinId, hours);
 
         res.send(resp);
     } catch (e) {
@@ -566,6 +568,145 @@ app.get('/api/:platform/my-trades/coin/:coinId/hours/:hours', auth.required, asy
     } catch (e) {
         res.send(e.message, 500);
     }
+});
+
+const aggregatedTransactions = async ({req, client, dif, uuids, tradingPair}) => {
+
+    // As our platform api is using hour is unit, convert difference between the 2 dates in ms to hours
+    const divider = 1000 * 60 * 60;
+
+    // Add a little buffer of 5 minutes, to ensure that there are no rounding errors or the async logging creation timestamp causes problems
+    const hoursSinceBotWasStarted = (dif + 5 * 1000) / divider;
+
+    const platformInstance = getTradingPlatform(req);
+
+    const {trades, ticker, marketId} = await platformInstance.getMyTrades(tradingPair || undefined, hoursSinceBotWasStarted);
+
+    const result = await client.query('select platform_transaction_id from bot_platform_transaction_log where uuid = ANY($1)', [uuids]);
+
+    const platformTransactionIds = result.rows.map(({platform_transaction_id}) => platform_transaction_id);
+
+    const transactionIdsSet = new Set(platformTransactionIds);
+
+    const filteredTrades = trades.filter(trade => transactionIdsSet.has(trade.order));
+
+    return tradingAnalytics.aggregateMyTrades(tradingPair, marketId, 0, filteredTrades, ticker);
+};
+
+app.get('/api/bots', auth.required, async(req, res) => {
+   await databaseClientWrapper(async (client) => {
+       try {
+           const {active} = req.query;
+
+           const query = 'select uuid, bot_type, platform_name, additional_info, active from bot_log where user_id = $1';
+
+           const optionalWhere = () => ` and active = ${active ? 1 : 0}`;
+
+           const result = await client.query(`${query}${active !== undefined ? optionalWhere() : ''}`, [req.user.id]);
+
+           res.send(result.rows);
+       } catch (e) {
+           res.status(500).send(e.message);
+       }
+   });
+});
+
+const databaseClientWrapper = async (fn) => {
+    let client;
+
+    try {
+        client = await pool.connect();
+        await fn(client);
+    } finally {
+        if (client) {
+            client.release();
+        }
+    }
+};
+
+app.get('/api/bot-trades/platform/:platform/type/:botType/trading-pair/:tradingPair', auth.required, async (req, res) => {
+   let client;
+
+   try {
+     const { platform, botType, tradingPair } = req.params;
+
+     const {top} = req.query;
+
+     if (!platform || !botType || !tradingPair) {
+         throw new Error('The parameters platformId, botType and tradingPair are mandatory!');
+     }
+
+     client = await pool.connect();
+
+     let result = await client.query(`select created_at, additional_info->'coinId' as trading_pair, platform_name, uuid from bot_log 
+        where user_id = $1 and platform_name = $2 and bot_type = $3 and (additional_info->>'coinId') = $4 order by created_at desc ${top ? `limit ${top}`: ''}`,
+         [req.user.id, platform, botType, tradingPair]);
+
+       if (!result.rows.length) {
+           throw new Error(`No bots were found for the given config parameters`);
+       }
+
+       // as we have ordered the bots by creation date asc, the first entry is the oldest timestamp
+       const oldestBotCreationDate = result.rows[result.rows.length - 1].created_at;
+
+       const dif = new Date().getTime() - new Date(oldestBotCreationDate);
+
+       const uuids = result.rows.map(({uuid}) => uuid);
+
+       res.send(await aggregatedTransactions({req, client, dif, uuids, tradingPair}));
+   } catch (e) {
+       res.status(500).send(e.message);
+   } finally {
+       if (client) {
+           client.release();
+       }
+   }
+});
+
+app.get('/api/bot-trades/:botUuid', auth.required, async (req, res) => {
+    let client;
+
+   try {
+       const {botUuid} = req.params;
+
+       if (!botUuid) {
+           throw new Error('The bot uuid is a required path param!');
+       }
+
+       client = await pool.connect();
+
+       let result = await client.query(`select created_at, additional_info->'coinId' as trading_pair, platform_name from bot_log where user_id = $1 and uuid = $2`, [req.user.id, botUuid]);
+
+       if (!result.rows.length) {
+           throw new Error(`No bot with uuid ${botUuid} was found for the current session user.`);
+       }
+
+       // As the uuid is the primary key of the table, it's safe to assume that we either have no result or exactly 1.
+       const botCreationDate = result.rows[0].created_at;
+
+       const dif = new Date().getTime() - new Date(botCreationDate);
+
+       const tradingPair = result.rows[0].trading_pair;
+       const platformName = result.rows[0].platform_name;
+
+       // The method assumes that the request contains a parameter 'platformId', manually construct an object here to conform to this structure
+       const modifiedReq = {
+           ...req,
+           params: {
+               ...req.params,
+               platform: platformName
+           }
+       };
+
+       res.send(await aggregatedTransactions({req: modifiedReq, client, dif, uuids:[botUuid], tradingPair}));
+
+   } catch (e) {
+       res.status(500).send(e.message);
+   } finally {
+       if (client) {
+           client.release();
+       }
+   }
 });
 
 const past5YearsInHours = 5 * 365 * 24;
@@ -656,6 +797,7 @@ app.get('/api/platform', auth.required, async (req, res) => {
     }
 });
 
+/*
 app.get('/api/test/db', async (req, res) => {
     let client;
     try {
@@ -680,6 +822,7 @@ app.get('/api/test/db', async (req, res) => {
         }
     }
 });
+ */
 
 // The "catchall" handler: for any request that doesn't
 // match one above, send back React's index.html file.

@@ -31,10 +31,18 @@ class GridBot extends TradingBot {
         // If the strategy is long, then any amount that is used for sell orders has to be bought at first
         // If the strategy is short, any amount that is used for buy orders has to be realised by sell orders before
 
-        this.currentlyInvestedFunds = strategy === 'neutral' ? maximumInvestment / 2 :
-            strategy === 'long' ? 0 : maximumInvestment;
+        this.chunkSize = this.maximumInvestment / this.numberOfGrids;
+
+        if (strategy === 'allFunds') {
+            this.currentlyInvestedFunds = maximumInvestment;
+            this.maximumInvestment = maximumInvestment * 2;
+        } else {
+            this.currentlyInvestedFunds = strategy === 'neutral' ? maximumInvestment / 2 :
+                strategy === 'long' ? 0 : maximumInvestment;
+        }
 
         this.lastExecutedGrid = 0;
+
 
         // Create the pool and database logic here for now, as the pubsub module doesn't seem to catch every event.
         this.pool = new Pool({
@@ -138,7 +146,7 @@ class GridBot extends TradingBot {
 
         let relevantLevel = level;
 
-        if (Math.abs(relevantLevel) > this.numberOfGrids) {
+        if (Math.abs(relevantLevel) >= this.numberOfGrids) {
             if(relevantGrid.some(entry => !entry.hit)) {
                 // The current level is out of bound, but there is at least 1 level that was skipped. Manually set the current level to the highest level
                 const filteredKeys = [...relevantGrid.keys()].filter(key => !relevantGrid[key].hit);
@@ -164,9 +172,7 @@ class GridBot extends TradingBot {
                 .length;
         }
 
-        const chunkSize = this.maximumInvestment / this.numberOfGrids;
-
-        let amount = chunkSize;
+        let amount = this.chunkSize;
 
         if (levelSkipped) {
             amount += (amount * levelSkipped);
@@ -176,20 +182,18 @@ class GridBot extends TradingBot {
         if (((this.currentlyInvestedFunds + amount) > this.maximumInvestment) && orderType === 'buy') {
             // there is still room left int he maximum investment value and there's room for at least 1 full chunk
             if (this.currentlyInvestedFunds < this.maximumInvestment &&
-                (this.maximumInvestment - this.currentlyInvestedFunds) > chunkSize) {
+                (this.maximumInvestment - this.currentlyInvestedFunds) > this.chunkSize) {
                 // Adjust the amount if the maximumInvestment amount isn't fully filled yet. This can happen e.g.
                 // if a level was skipped.
                 const diff = this.maximumInvestment - this.currentlyInvestedFunds;
 
                 amount = diff - diff % chunkSize;
             } else {
-                console.log(`The GridBot has reached the maximum investment amount, pausing further buys until funds were sold`);
                 return;
             }
         }
 
         if (this.currentlyInvestedFunds < amount && orderType === 'sell') {
-            console.log(`The GridBot has reached the the 0 investment amount, pausing further sells until funds were bought`);
             return;
         }
 
@@ -246,11 +250,11 @@ class GridBot extends TradingBot {
         }
     }
 
-    async run() {
+    async run(checkInterval = 10) {
         console.log(`Start grid bot for user ${this.userEmail}, trading pair ${this.coinId} on platform ${this.platformName}`);
 
         while (this.isRunning) {
-            await utils.timeout(10 * 1000);
+            await utils.timeout(checkInterval * 1000);
 
             // If buy/sell grids were not initialized yet, skip logic and wait for the next iteration
             if (this.buyGrid && this.sellGrid) {
