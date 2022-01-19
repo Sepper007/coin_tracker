@@ -596,20 +596,47 @@ const aggregatedTransactions = async ({req, client, dif, uuids, tradingPair}) =>
 app.get('/api/bots', auth.required, async(req, res) => {
    await databaseClientWrapper(async (client) => {
        try {
-           const {active} = req.query;
+           const {active,tradingPair} = req.query;
 
-           const query = 'select uuid, bot_type, platform_name, additional_info, active from bot_log where user_id = $1';
+           const query = 'select uuid, bot_type, platform_name, additional_info, active, created_at from bot_log where user_id = $1';
 
-           const optionalWhere = () => ` and active = ${active ? 1 : 0}`;
+           const whereClauses = [];
 
-           const result = await client.query(`${query}${active !== undefined ? optionalWhere() : ''}`, [req.user.id]);
+           const preparedValues = [req.user.id];
 
-           res.send(result.rows);
+           if (active !== undefined) {
+               whereClauses.push(`and active = ${active ? 1 : 0}`);
+           }
+
+           if (tradingPair) {
+               whereClauses.push(`and additional_info->>'coinId' = $2`);
+               preparedValues.push(tradingPair);
+           }
+           const result = await client.query(`${queryWithWhereClauses(query, whereClauses)} order by created_at desc, active desc`, preparedValues);
+
+           const mappedRes = result.rows.map(row => ({
+               uuid: row.uuid,
+               botType: row.bot_type,
+               platformName: row.platform_name,
+               additionalInfo: row.additional_info,
+               active: !!row.active,
+               createdAt: utils.formatDate(row.created_at)
+           }));
+
+           const bots = {
+               active: mappedRes.filter(row => row.active),
+               inactive: mappedRes.filter(row => !row.active)
+           };
+
+           res.send(bots);
        } catch (e) {
+           console.log(e);
            res.status(500).send(e.message);
        }
    });
 });
+
+const queryWithWhereClauses = (query, whereClauses) => `${query} ${whereClauses.join(' ')}`;
 
 const databaseClientWrapper = async (fn) => {
     let client;

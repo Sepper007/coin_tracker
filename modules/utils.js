@@ -3,7 +3,14 @@ const crypto = require('crypto');
 
 const utils = {
     timeout: (ms) => new Promise(resolve => setTimeout(resolve, ms)),
-    decryptPrivateKey (encryptedKey, input_vector) {
+    formatDate: (str) => {
+        const date = new Date(str);
+
+        const minutes = date.getMinutes();
+
+        return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${minutes < 10 ? '0' : ''}${minutes}`;
+    },
+    decryptPrivateKey(encryptedKey, input_vector) {
         const secretKey = process.env.ENCRYPTION_KEY;
 
         const decipher = crypto.createDecipheriv('aes-256-ctr', secretKey, input_vector);
@@ -12,7 +19,7 @@ const utils = {
 
         return decryptedPrivateKey.toString();
     },
-    createPlatformInstance (platform, userId, publicKey, privateKey) {
+    createPlatformInstance(platform, userId, publicKey, privateKey) {
         if (!tradingPlatforms[platform]) {
             throw new Error(`Platform ${platform} is not supported, the supported values are: ${Object.keys(tradingPlatforms).join(',')}`);
         }
