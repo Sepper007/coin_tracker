@@ -11,6 +11,16 @@ class NDAXTradingPlatform {
             metaId: 'DOGE',
             minimumQuantity: 10
         },
+        dot: {
+            marketId: 'DOT/CAD',
+            metaId: 'DOT',
+            minimumQuantity: 0.5
+        },
+        sol: {
+            marketId: 'SOL/CAD',
+            metaId: 'SOL',
+            minimumQuantity: 0.06
+        },
         xrp: {
             marketId: 'XRP/CAD',
             metaId: 'XRP',
