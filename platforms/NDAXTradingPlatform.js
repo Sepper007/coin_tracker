@@ -201,16 +201,28 @@ class NDAXTradingPlatform {
 
         const trades = await this.userSpecificInstance.fetchMyTrades(marketId, since, max);
 
-        return trades.map(entry => ({
-            symbol: entry.symbol,
-            side: entry.side,
-            type: entry.type,
-            volume: entry.amount,
-            price: entry.price,
-            value: entry.cost,
-            datetime: Utils.formatDate(entry.datetime)
-            // The result is in ascending date order by default
-        })).reverse();
+        const ticker = await this.fetchTicker(coinId);
+
+        const minutesUp = (Date.now() - since) / (60 * 1000);
+
+        return {
+            ticker,
+            minutesUp,
+            marketId,
+            trades
+            /*
+            trades: trades.map(entry => ({
+                symbol: entry.symbol,
+                side: entry.side,
+                type: entry.type,
+                volume: entry.amount,
+                price: entry.price,
+                value: entry.cost,
+                datetime: Utils.formatDate(entry.datetime)
+                // The result is in ascending date order by default
+            })).reverse()
+             */
+        };
     }
 }
 
